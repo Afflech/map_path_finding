@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Pathfinding - Đống Đa Map</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <div id="control-panel">
+        <h2>📍 Hệ Thống Tìm Đường AI</h2>
+        <p><b>Hướng dẫn:</b> Click vào bản đồ để chọn điểm đi và điểm đến.</p>
+        
+        <div class="info-box">
+            <p>🟢 Điểm đi: <span id="start-coords">Chưa chọn</span></p>
+            <p>🔴 Điểm đến: <span id="end-coords">Chưa chọn</span></p>
+            <p>📏 Quãng đường: <span id="distance-info">0 km</span></p>
+        </div>
+
+        <div class="status-box">
+            <p>Trạng thái: <span id="status-text" class="idle">Đang chờ...</span></p>
+        </div>
+
+        <button id="reset-btn" onclick="resetMap()">Làm mới bản đồ</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/map_logic.js"></script>
+</body>
+</html>

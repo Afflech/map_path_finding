@@ -1,0 +1,74 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body, html {
+    height: 100%;
+    width: 100%;
+}
+
+/* Bản đồ chiếm full màn hình */
+#map {
+    height: 100%;
+    width: 100%;
+    z-index: 1; /* Để bản đồ nằm dưới bảng điều khiển */
+}
+
+/* Bảng điều khiển nổi bên góc trái */
+#control-panel {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background-color: rgba(255, 255, 255, 0.95);
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    z-index: 1000; /* Nằm đè lên trên bản đồ */
+    width: 320px;
+}
+
+#control-panel h2 {
+    font-size: 18px;
+    color: #333;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #007bff;
+    padding-bottom: 5px;
+}
+
+.info-box, .status-box {
+    margin-top: 15px;
+    font-size: 14px;
+    color: #555;
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+}
+
+#status-text {
+    font-weight: bold;
+}
+.idle { color: #6c757d; }
+.loading { color: #ffc107; }
+.success { color: #28a745; }
+.error { color: #dc3545; }
+
+button {
+    margin-top: 15px;
+    width: 100%;
+    padding: 10px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.3s;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
