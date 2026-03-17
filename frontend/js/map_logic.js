@@ -113,3 +113,37 @@ function updateStatus(message, className) {
     statusText.innerText = message;
     statusText.className = className;
 }
+
+// ==========================================
+// TÍNH NĂNG: VẼ RẠNH GIỚI QUẬN ĐỐNG ĐA
+// ==========================================
+function drawDistrictBoundary() {
+    // API lấy dữ liệu GeoJSON ranh giới của Quận Đống Đa
+    const nominatimUrl = "https://nominatim.openstreetmap.org/search?q=Quận+Đống+Đa,+Hà+Nội,+Việt+Nam&polygon_geojson=1&format=json";
+
+    fetch(nominatimUrl)
+        .then(response => response.json())
+        .then(data => {
+            if (data && data.length > 0) {
+                // Lấy tọa độ ranh giới từ kết quả đầu tiên
+                const boundaryGeoJSON = data[0].geojson;
+                
+                // Vẽ lên bản đồ bằng Leaflet
+                L.geoJSON(boundaryGeoJSON, {
+                    style: {
+                        color: "#007bff",       // Màu đường viền (Xanh dương)
+                        weight: 3,              // Độ dày đường viền
+                        opacity: 0.6,           // Độ đậm nhạt của viền
+                        fillColor: "#007bff",   // Màu nền bên trong
+                        fillOpacity: 0.05       // Nền trong suốt (rất nhạt để không che đường)
+                    }
+                }).addTo(map);
+            }
+        })
+        .catch(error => {
+            console.error("Lỗi khi tải ranh giới quận:", error);
+        });
+}
+
+// Gọi hàm này ngay khi file JS được tải xong
+drawDistrictBoundary();

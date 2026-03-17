@@ -62,20 +62,33 @@ def find_shortest_path(G, start_coords, end_coords):
         )
 
         # 3. Chuyển đổi ID các node thành tọa độ [lat, lon] để gửi cho Frontend vẽ
+        # --- BẮT ĐẦU ĐOẠN CẦN THAY THẾ ---
         route_coords = []
-        total_distance = []
+        total_distance = 0 
+        
+        # Chỉ lặp đến len(route) - 1 để tránh lỗi vượt quá mảng khi lấy node i+1
         for i in range(len(route)):
             node = route[i]
-            lat, lon = G.nodes[node]['y'], G.nodes[node]['x']
+            lat = G.nodes[node]['y']
+            lon = G.nodes[node]['x']
             route_coords.append([lat, lon])
-
-    # Tính tổng khoảng cách
+            
             if i < len(route) - 1:
                 u = route[i]
                 v = route[i+1]
-        # Lấy độ dài của đoạn đường nối giữa 2 node
-                edge_data = G.get_edge_data(u, v)[0] 
-                total_distance += edge_data.get('length', 0)
+                
+                # Lấy dữ liệu cạnh (OSMnx dùng MultiDiGraph nên phải lấy key [0])
+                edge_data = G.get_edge_data(u, v)
+                if edge_data and 0 in edge_data:
+                    length = edge_data[0].get('length', 0)
+                    
+                    # Nếu length là mảng (list) do gộp đường -> tính tổng mảng
+                    if isinstance(length, list):
+                        total_distance += sum(length)
+                    else:
+                        # Nếu là số thực bình thường
+                        total_distance += float(length)
+        # --- KẾT THÚC ĐOẠN CẦN THAY THẾ ---
 
         return {"status": "success", "path": route_coords, "distance": total_distance}
 
