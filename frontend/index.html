@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Pathfinding - Đống Đa Map</title>
-    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -12,12 +11,31 @@
 
     <div id="control-panel">
         <h2>📍 Hệ Thống Tìm Đường AI</h2>
-        <p><b>Hướng dẫn:</b> Click vào bản đồ để chọn điểm đi và điểm đến.</p>
+        <p><b>Hướng dẫn:</b> Chọn chế độ rồi click vào bản đồ.</p>
+        
+        <div class="control-group">
+            <label>🛠️ Chế độ Click Map:</label>
+            <select id="clickMode">
+                <option value="route" selected>📍 Chọn Điểm Đi/Đến</option>
+                <option value="jammed">🔴 Đánh dấu Tắc đường</option>
+                <option value="flooded">🔵 Đánh dấu Ngập lụt</option>
+            </select>
+        </div>
+
+        <div class="control-group" style="margin-top: 10px;">
+            <label>🚗 Phương tiện:</label>
+            <select id="vehicleType" onchange="triggerRouteRecalc()">
+                <option value="walk">Đi bộ (5 km/h)</option>
+                <option value="bike" selected>Xe máy (30 km/h)</option>
+                <option value="car">Ô tô (50 km/h)</option>
+            </select>
+        </div>
         
         <div class="info-box">
             <p>🟢 Điểm đi: <span id="start-coords">Chưa chọn</span></p>
             <p>🔴 Điểm đến: <span id="end-coords">Chưa chọn</span></p>
             <p>📏 Quãng đường: <span id="distance-info">0 km</span></p>
+            <p>⏱️ Thời gian: <span id="time-info" style="color:red; font-weight:bold;">0 phút</span></p>
         </div>
 
         <div class="status-box">
