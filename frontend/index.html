@@ -30,12 +30,25 @@
                 <option value="car">Ô tô (50 km/h)</option>
             </select>
         </div>
+
+        <div class="control-group" style="margin-top: 10px;">
+            <label>🧭 Tuyến hiển thị:</label>
+            <select id="routeSelector" onchange="onRouteSelectionChange()">
+                <option value="0" selected>Tuyến 1</option>
+                <option value="1">Tuyến 2</option>
+                <option value="2">Tuyến 3</option>
+            </select>
+        </div>
         
         <div class="info-box">
             <p>🟢 Điểm đi: <span id="start-coords">Chưa chọn</span></p>
             <p>🔴 Điểm đến: <span id="end-coords">Chưa chọn</span></p>
             <p>📏 Quãng đường: <span id="distance-info">0 km</span></p>
             <p>⏱️ Thời gian: <span id="time-info" style="color:red; font-weight:bold;">0 phút</span></p>
+        </div>
+
+        <div id="navigation-steps" class="navigation-steps">
+            <p class="nav-placeholder">Chưa có chỉ dẫn điều hướng.</p>
         </div>
 
         <div class="status-box">

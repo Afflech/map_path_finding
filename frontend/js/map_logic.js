@@ -9,12 +9,16 @@ let routePolyline = null;
 let jammedPoints = [];
 let floodedPoints = [];
 let obstacleMarkers = [];
+const TOP_K_ROUTES = 3;
+let currentRoutes = [];
 
 const startText = document.getElementById("start-coords");
 const endText = document.getElementById("end-coords");
 const statusText = document.getElementById("status-text");
 const distanceText = document.getElementById("distance-info");
 const timeText = document.getElementById("time-info");
+const routeSelector = document.getElementById("routeSelector");
+const navigationStepsEl = document.getElementById("navigation-steps");
 
 function toPoint(latlng) {
     return { lat: latlng.lat, lng: latlng.lng };
@@ -24,6 +28,43 @@ function pointToLatLng(point) {
     if (Array.isArray(point) && point.length >= 2) return [point[0], point[1]];
     if (point && typeof point === "object") return [point.lat, point.lng ?? point.lon];
     return null;
+}
+
+function formatDistanceMeters(distanceMeters) {
+    if (!Number.isFinite(distanceMeters)) return "0m";
+    if (distanceMeters >= 1000) return `${(distanceMeters / 1000).toFixed(1)}km`;
+    return `${Math.round(distanceMeters)}m`;
+}
+
+function instructionToText(step) {
+    const action = (step?.action || "straight").toLowerCase();
+    const street = step?.street || "đường không tên";
+    const distanceLabel = formatDistanceMeters(step?.distance_m || 0);
+    if (action === "left") return `Rẽ trái vào ${street} - ${distanceLabel}`;
+    if (action === "right") return `Rẽ phải vào ${street} - ${distanceLabel}`;
+    return `Đi thẳng theo ${street} - ${distanceLabel}`;
+}
+
+function instructionIcon(action) {
+    if (action === "left") return "⬅️";
+    if (action === "right") return "➡️";
+    return "⬆️";
+}
+
+function renderNavigationSteps(instructions) {
+    if (!navigationStepsEl) return;
+    if (!Array.isArray(instructions) || !instructions.length) {
+        navigationStepsEl.innerHTML = '<p class="nav-placeholder">Chưa có chỉ dẫn điều hướng.</p>';
+        return;
+    }
+
+    navigationStepsEl.innerHTML = instructions
+        .map((step) => {
+            const icon = instructionIcon(step.action);
+            const text = instructionToText(step);
+            return `<div class="navigation-step"><span class="navigation-icon">${icon}</span><span class="navigation-text">${text}</span></div>`;
+        })
+        .join("");
 }
 
 function updateStatus(message, className) {
@@ -50,6 +91,51 @@ function drawPath(pathData) {
     map.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
 }
 
+function drawSelectedRoute(route, fitBounds = true) {
+    if (!route) {
+        updateStatus("Tuyến đã chọn không tồn tại.", "error");
+        return;
+    }
+
+    const color = "#e53935";
+    const latLngs = (route.path || [])
+        .map(pointToLatLng)
+        .filter((coord) => Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1]));
+
+    if (routePolyline) {
+        map.removeLayer(routePolyline);
+        routePolyline = null;
+    }
+
+    if (!latLngs.length) {
+        updateStatus("Không có dữ liệu đường đi hợp lệ.", "error");
+        return;
+    }
+
+    routePolyline = L.polyline(latLngs, { color, weight: 7, opacity: 0.95 }).addTo(map);
+    if (fitBounds) map.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
+}
+
+function syncRouteSelectorOptions(routeCount) {
+    for (let i = 0; i < routeSelector.options.length; i += 1) {
+        routeSelector.options[i].disabled = i >= routeCount;
+    }
+    if (Number(routeSelector.value) >= routeCount) {
+        routeSelector.value = "0";
+    }
+}
+
+function onRouteSelectionChange() {
+    if (!currentRoutes.length) return;
+    const selectedIndex = Number(routeSelector.value);
+    const selectedRoute = currentRoutes[selectedIndex] || currentRoutes[0];
+    drawSelectedRoute(selectedRoute, false);
+    distanceText.innerText = `${(selectedRoute.distance_m / 1000).toFixed(2)} km`;
+    timeText.innerText = `${selectedRoute.duration_min.toFixed(1)} phút`;
+    renderNavigationSteps(selectedRoute.instructions || []);
+    updateStatus(`Đang hiển thị tuyến ${selectedIndex + 1}.`, "success");
+}
+
 function buildRequestPayload() {
     const start = toPoint(startMarker.getLatLng());
     const end = toPoint(endMarker.getLatLng());
@@ -58,6 +144,7 @@ function buildRequestPayload() {
         start,
         end,
         vehicle: document.getElementById("vehicleType").value,
+        top_k: TOP_K_ROUTES,
         obstacles: {
             jammed: jammedPoints,
             flooded: floodedPoints,
@@ -74,6 +161,7 @@ function parseResponsePayload(response) {
         path: data.path || response.path || [],
         distanceM: data.distance_m ?? response.distance ?? 0,
         durationMin: data.duration_min ?? response.time_minutes ?? 0,
+        routes: data.routes || response.routes || [],
     };
 }
 
@@ -97,10 +185,21 @@ async function findShortestPath() {
         }
 
         const parsed = parseResponsePayload(data);
-        drawPath(parsed.path);
-        distanceText.innerText = `${(parsed.distanceM / 1000).toFixed(2)} km`;
-        timeText.innerText = `${parsed.durationMin.toFixed(1)} phút`;
-        updateStatus("Tìm đường thành công.", "success");
+        currentRoutes = parsed.routes.length
+            ? parsed.routes
+            : [
+                  {
+                      path: parsed.path,
+                      distance_m: parsed.distanceM,
+                      duration_min: parsed.durationMin,
+                      instructions: [],
+                      rank: 1,
+                  },
+              ];
+
+        syncRouteSelectorOptions(currentRoutes.length);
+        onRouteSelectionChange();
+        updateStatus(`Tìm đường thành công (${currentRoutes.length} tuyến).`, "success");
     } catch (_error) {
         updateStatus("Lỗi kết nối backend.", "error");
     }
@@ -169,14 +268,18 @@ function resetMap() {
     startMarker = null;
     endMarker = null;
     routePolyline = null;
+    currentRoutes = [];
     jammedPoints = [];
     floodedPoints = [];
     obstacleMarkers = [];
+    routeSelector.value = "0";
+    syncRouteSelectorOptions(0);
 
     startText.innerText = "Chưa chọn";
     endText.innerText = "Chưa chọn";
     distanceText.innerText = "0 km";
     timeText.innerText = "0 phút";
+    renderNavigationSteps([]);
     updateStatus("Đang chờ...", "idle");
 }
 

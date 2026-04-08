@@ -19,11 +19,14 @@ def api_find_path():
     start_coords = data['start']
     end_coords = data['end']
     vehicle = data.get('vehicle', 'bike')
+    top_k = data.get('top_k', 3)
     obstacles = data.get('obstacles', {})
     jammed = data.get('jammed', obstacles.get('jammed', []))
     flooded = data.get('flooded', obstacles.get('flooded', []))
 
-    result = find_shortest_path(map_graph, start_coords, end_coords, vehicle, jammed, flooded)
+    result = find_shortest_path(
+        map_graph, start_coords, end_coords, vehicle, jammed, flooded, top_k
+    )
 
     if result.get("status") == "success":
         return jsonify(result), 200
