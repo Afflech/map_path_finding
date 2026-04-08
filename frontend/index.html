@@ -39,6 +39,21 @@
                 <option value="2">Tuyến 3</option>
             </select>
         </div>
+
+        <div class="control-group" style="margin-top: 10px;">
+            <button id="animation-toggle-btn" type="button" onclick="toggleAnimation()">
+                Animation: Bật
+            </button>
+        </div>
+
+        <div class="control-group" style="margin-top: 10px;">
+            <label>⚡ Tốc độ animation:</label>
+            <select id="animationSpeed" onchange="updateAnimationSpeed()">
+                <option value="fast">Nhanh</option>
+                <option value="normal" selected>Vừa</option>
+                <option value="slow">Chậm</option>
+            </select>
+        </div>
         
         <div class="info-box">
             <p>🟢 Điểm đi: <span id="start-coords">Chưa chọn</span></p>

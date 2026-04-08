@@ -1,6 +1,8 @@
 import math
 import os
 import random
+from heapq import heappop, heappush
+from itertools import count
 
 import networkx as nx
 import osmnx as ox
@@ -106,8 +108,58 @@ def _pick_best_edge_attrs(graph, u, v, speed_ms, vehicle, jammed_nodes, flooded_
     return best_attrs, best_weight, best_length
 
 
+def _astar_path_with_exploration(graph, source, target, heuristic, weight):
+    push = heappush
+    pop = heappop
+    c = count()
+    queue = [(0.0, next(c), source, 0.0, None)]
+    enqueued = {}
+    explored = {}
+    explored_order = []
+
+    while queue:
+        _, __, current, dist, parent = pop(queue)
+        if current in explored:
+            continue
+        explored[current] = parent
+        explored_order.append(current)
+
+        if current == target:
+            path = [current]
+            node = parent
+            while node is not None:
+                path.append(node)
+                node = explored[node]
+            path.reverse()
+            return path, explored_order
+
+        for neighbor, edge_data in graph[current].items():
+            cost = weight(current, neighbor, edge_data)
+            if not math.isfinite(cost):
+                continue
+            ncost = dist + cost
+            if neighbor in enqueued:
+                qcost, h_val = enqueued[neighbor]
+                if qcost <= ncost:
+                    continue
+            else:
+                h_val = heuristic(neighbor, target)
+
+            enqueued[neighbor] = (ncost, h_val)
+            push(queue, (ncost + h_val, next(c), neighbor, ncost, current))
+
+    raise nx.NetworkXNoPath
+
+
 def _route_to_payload(
-    graph, route_nodes, speed_ms, vehicle, jammed_nodes, flooded_nodes, node_penalties
+    graph,
+    route_nodes,
+    explored_nodes,
+    speed_ms,
+    vehicle,
+    jammed_nodes,
+    flooded_nodes,
+    node_penalties,
 ):
     route_coords = []
     total_distance = 0.0
@@ -179,8 +231,14 @@ def _route_to_payload(
     route_coords.append([float(graph.nodes[last_node]["y"]), float(graph.nodes[last_node]["x"])])
 
     path_points = [{"lat": lat, "lng": lon} for lat, lon in route_coords]
+    explored_coords = [
+        [float(graph.nodes[node]["y"]), float(graph.nodes[node]["x"])]
+        for node in explored_nodes
+        if node in graph.nodes
+    ]
     return {
         "path": path_points,
+        "explored_nodes": explored_coords,
         "distance_m": total_distance,
         "duration_min": total_time_sec / 60.0,
         "node_count": len(route_nodes),
@@ -288,10 +346,10 @@ def find_shortest_path(
 
         for _ in range(max_attempts):
             try:
-                route_nodes = nx.astar_path(
+                route_nodes, explored_nodes = _astar_path_with_exploration(
                     graph,
-                    source=start_node,
-                    target=end_node,
+                    start_node,
+                    end_node,
                     heuristic=lambda u, v: _heuristic_time(u, v, graph, speed_ms),
                     weight=weight_func,
                 )
@@ -316,7 +374,14 @@ def find_shortest_path(
 
             route_nodes_list.append(route_nodes)
             route_payload = _route_to_payload(
-                graph, route_nodes, speed_ms, vehicle, jammed_nodes, flooded_nodes, node_penalties
+                graph,
+                route_nodes,
+                explored_nodes,
+                speed_ms,
+                vehicle,
+                jammed_nodes,
+                flooded_nodes,
+                node_penalties,
             )
             route_payload["rank"] = len(route_payloads) + 1
             route_payloads.append(route_payload)
@@ -338,12 +403,14 @@ def find_shortest_path(
             "status": "success",
             "data": {
                 "path": primary_route["path"],
+                "explored_nodes": primary_route["explored_nodes"],
                 "distance_m": primary_route["distance_m"],
                 "duration_min": primary_route["duration_min"],
                 "routes": route_payloads,
             },
             # Backward compatibility with old frontend schema.
             "path": primary_path_legacy,
+            "explored_nodes": primary_route["explored_nodes"],
             "distance": primary_route["distance_m"],
             "time_minutes": primary_route["duration_min"],
             "routes": route_payloads,

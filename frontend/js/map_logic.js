@@ -10,7 +10,16 @@ let jammedPoints = [];
 let floodedPoints = [];
 let obstacleMarkers = [];
 const TOP_K_ROUTES = 3;
+const ANIMATION_SPEED_PRESETS = {
+    fast: { intervalMs: 8, batchSize: 5 },
+    normal: { intervalMs: 15, batchSize: 3 },
+    slow: { intervalMs: 24, batchSize: 2 },
+};
 let currentRoutes = [];
+let exploredNodeMarkers = [];
+let exploredAnimationTimer = null;
+let animationEnabled = true;
+let animationSpeed = "normal";
 
 const startText = document.getElementById("start-coords");
 const endText = document.getElementById("end-coords");
@@ -19,6 +28,8 @@ const distanceText = document.getElementById("distance-info");
 const timeText = document.getElementById("time-info");
 const routeSelector = document.getElementById("routeSelector");
 const navigationStepsEl = document.getElementById("navigation-steps");
+const animationToggleBtn = document.getElementById("animation-toggle-btn");
+const animationSpeedSelect = document.getElementById("animationSpeed");
 
 function toPoint(latlng) {
     return { lat: latlng.lat, lng: latlng.lng };
@@ -70,6 +81,62 @@ function renderNavigationSteps(instructions) {
 function updateStatus(message, className) {
     statusText.innerText = message;
     statusText.className = className;
+}
+
+function stopExplorationAnimation() {
+    if (exploredAnimationTimer) {
+        clearInterval(exploredAnimationTimer);
+        exploredAnimationTimer = null;
+    }
+}
+
+function clearExploredMarkers() {
+    exploredNodeMarkers.forEach((marker) => map.removeLayer(marker));
+    exploredNodeMarkers = [];
+}
+
+function animateExploredNodes(exploredNodes, onComplete) {
+    stopExplorationAnimation();
+    clearExploredMarkers();
+
+    if (!animationEnabled || !Array.isArray(exploredNodes) || !exploredNodes.length) {
+        onComplete();
+        return;
+    }
+
+    let cursor = 0;
+    const speed = ANIMATION_SPEED_PRESETS[animationSpeed] || ANIMATION_SPEED_PRESETS.normal;
+    exploredAnimationTimer = setInterval(() => {
+        for (let step = 0; step < speed.batchSize && cursor < exploredNodes.length; step += 1) {
+            const point = pointToLatLng(exploredNodes[cursor]);
+            cursor += 1;
+            if (!point || !Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
+
+            const marker = L.circleMarker(point, {
+                radius: 4,
+                color: "#4c6c91",
+                fillColor: "#7aa2d8",
+                fillOpacity: 0.5,
+                opacity: 0.7,
+                weight: 1.5,
+                interactive: false,
+            }).addTo(map);
+            exploredNodeMarkers.push(marker);
+        }
+
+        if (cursor >= exploredNodes.length) {
+            stopExplorationAnimation();
+            onComplete();
+        }
+    }, speed.intervalMs);
+}
+
+function renderRouteWithAnimation(route, fitBounds = true) {
+    if (routePolyline) {
+        map.removeLayer(routePolyline);
+        routePolyline = null;
+    }
+    animateExploredNodes(route.explored_nodes || [], () => drawSelectedRoute(route, fitBounds));
 }
 
 function drawPath(pathData) {
@@ -129,11 +196,37 @@ function onRouteSelectionChange() {
     if (!currentRoutes.length) return;
     const selectedIndex = Number(routeSelector.value);
     const selectedRoute = currentRoutes[selectedIndex] || currentRoutes[0];
-    drawSelectedRoute(selectedRoute, false);
+    renderRouteWithAnimation(selectedRoute, false);
     distanceText.innerText = `${(selectedRoute.distance_m / 1000).toFixed(2)} km`;
     timeText.innerText = `${selectedRoute.duration_min.toFixed(1)} phút`;
     renderNavigationSteps(selectedRoute.instructions || []);
     updateStatus(`Đang hiển thị tuyến ${selectedIndex + 1}.`, "success");
+}
+
+function toggleAnimation() {
+    animationEnabled = !animationEnabled;
+    animationToggleBtn.innerText = `Animation: ${animationEnabled ? "Bật" : "Tắt"}`;
+    animationToggleBtn.classList.toggle("off", !animationEnabled);
+
+    if (!animationEnabled) {
+        stopExplorationAnimation();
+        clearExploredMarkers();
+        if (currentRoutes.length) {
+            const selectedIndex = Number(routeSelector.value);
+            const selectedRoute = currentRoutes[selectedIndex] || currentRoutes[0];
+            drawSelectedRoute(selectedRoute, false);
+        }
+    }
+}
+
+function updateAnimationSpeed() {
+    const selected = animationSpeedSelect?.value || "normal";
+    if (!ANIMATION_SPEED_PRESETS[selected]) {
+        animationSpeed = "normal";
+        if (animationSpeedSelect) animationSpeedSelect.value = "normal";
+        return;
+    }
+    animationSpeed = selected;
 }
 
 function buildRequestPayload() {
@@ -159,6 +252,7 @@ function parseResponsePayload(response) {
     const data = response?.data || {};
     return {
         path: data.path || response.path || [],
+        exploredNodes: data.explored_nodes || response.explored_nodes || [],
         distanceM: data.distance_m ?? response.distance ?? 0,
         durationMin: data.duration_min ?? response.time_minutes ?? 0,
         routes: data.routes || response.routes || [],
@@ -190,6 +284,7 @@ async function findShortestPath() {
             : [
                   {
                       path: parsed.path,
+                      explored_nodes: parsed.exploredNodes,
                       distance_m: parsed.distanceM,
                       duration_min: parsed.durationMin,
                       instructions: [],
@@ -263,6 +358,8 @@ function resetMap() {
     if (startMarker) map.removeLayer(startMarker);
     if (endMarker) map.removeLayer(endMarker);
     if (routePolyline) map.removeLayer(routePolyline);
+    stopExplorationAnimation();
+    clearExploredMarkers();
     obstacleMarkers.forEach((marker) => map.removeLayer(marker));
 
     startMarker = null;

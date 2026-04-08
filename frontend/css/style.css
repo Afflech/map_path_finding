@@ -56,6 +56,10 @@ body { display: flex; overflow: hidden; background: #f3f5f9; }
 .error { color: #dc3545; }
 button { margin-top: 15px; width: 100%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
 button:hover { background-color: #0056b3; }
+#animation-toggle-btn { margin-top: 0; background-color: #198754; }
+#animation-toggle-btn.off { background-color: #6c757d; }
+#animation-toggle-btn.off:hover { background-color: #5a6268; }
+#animationSpeed { background: #ffffff; }
 
 @media (max-width: 900px) {
     body { flex-direction: column; overflow: auto; }
