@@ -204,9 +204,7 @@ function onRouteSelectionChange() {
 }
 
 function toggleAnimation() {
-    animationEnabled = !animationEnabled;
-    animationToggleBtn.innerText = `Animation: ${animationEnabled ? "Bật" : "Tắt"}`;
-    animationToggleBtn.classList.toggle("off", !animationEnabled);
+    animationEnabled = Boolean(animationToggleBtn?.checked);
 
     if (!animationEnabled) {
         stopExplorationAnimation();
@@ -216,6 +214,13 @@ function toggleAnimation() {
             const selectedRoute = currentRoutes[selectedIndex] || currentRoutes[0];
             drawSelectedRoute(selectedRoute, false);
         }
+        return;
+    }
+
+    if (currentRoutes.length) {
+        const selectedIndex = Number(routeSelector.value);
+        const selectedRoute = currentRoutes[selectedIndex] || currentRoutes[0];
+        renderRouteWithAnimation(selectedRoute, false);
     }
 }
 

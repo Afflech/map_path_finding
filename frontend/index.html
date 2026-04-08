@@ -10,67 +10,90 @@
 <body>
 
     <div id="control-panel">
-        <h2>📍 Hệ Thống Tìm Đường AI</h2>
-        <p><b>Hướng dẫn:</b> Chọn chế độ rồi click vào bản đồ.</p>
-        
-        <div class="control-group">
-            <label>🛠️ Chế độ Click Map:</label>
-            <select id="clickMode">
-                <option value="route" selected>📍 Chọn Điểm Đi/Đến</option>
-                <option value="jammed">🔴 Đánh dấu Tắc đường</option>
-                <option value="flooded">🔵 Đánh dấu Ngập lụt</option>
-            </select>
+        <div class="panel-head">
+            <h2>AI Pathfinding</h2>
+            <p>Chọn chế độ rồi click lên bản đồ để tính tuyến.</p>
         </div>
 
-        <div class="control-group" style="margin-top: 10px;">
-            <label>🚗 Phương tiện:</label>
-            <select id="vehicleType" onchange="triggerRouteRecalc()">
-                <option value="walk">Đi bộ (5 km/h)</option>
-                <option value="bike" selected>Xe máy (30 km/h)</option>
-                <option value="car">Ô tô (50 km/h)</option>
-            </select>
+        <div class="controls-card">
+            <div class="control-group">
+                <label>Chế độ click map</label>
+                <select id="clickMode">
+                    <option value="route" selected>📍 Chọn Điểm Đi/Đến</option>
+                    <option value="jammed">🔴 Đánh dấu Tắc đường</option>
+                    <option value="flooded">🔵 Đánh dấu Ngập lụt</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Phương tiện</label>
+                <select id="vehicleType" onchange="triggerRouteRecalc()">
+                    <option value="walk">Đi bộ (5 km/h)</option>
+                    <option value="bike" selected>Xe máy (30 km/h)</option>
+                    <option value="car">Ô tô (50 km/h)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Tuyến hiển thị</label>
+                <select id="routeSelector" onchange="onRouteSelectionChange()">
+                    <option value="0" selected>Tuyến 1</option>
+                    <option value="1">Tuyến 2</option>
+                    <option value="2">Tuyến 3</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Animation</label>
+                <div class="toggle-row">
+                    <span class="toggle-label">Bật/Tắt</span>
+                    <label class="switch">
+                        <input id="animation-toggle-btn" type="checkbox" checked onchange="toggleAnimation()">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>Tốc độ animation</label>
+                <select id="animationSpeed" onchange="updateAnimationSpeed()">
+                    <option value="fast">Nhanh</option>
+                    <option value="normal" selected>Vừa</option>
+                    <option value="slow">Chậm</option>
+                </select>
+            </div>
         </div>
 
-        <div class="control-group" style="margin-top: 10px;">
-            <label>🧭 Tuyến hiển thị:</label>
-            <select id="routeSelector" onchange="onRouteSelectionChange()">
-                <option value="0" selected>Tuyến 1</option>
-                <option value="1">Tuyến 2</option>
-                <option value="2">Tuyến 3</option>
-            </select>
+        <div class="route-meta-card">
+            <p class="point-line">🟢 Điểm đi: <span id="start-coords">Chưa chọn</span></p>
+            <p class="point-line">🔴 Điểm đến: <span id="end-coords">Chưa chọn</span></p>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <p class="stat-label">Quãng đường</p>
+                    <p class="stat-value" id="distance-info">0 km</p>
+                </div>
+                <div class="stat-card">
+                    <p class="stat-label">Thời gian</p>
+                    <p class="stat-value" id="time-info">0 phút</p>
+                </div>
+            </div>
         </div>
 
-        <div class="control-group" style="margin-top: 10px;">
-            <button id="animation-toggle-btn" type="button" onclick="toggleAnimation()">
-                Animation: Bật
-            </button>
-        </div>
-
-        <div class="control-group" style="margin-top: 10px;">
-            <label>⚡ Tốc độ animation:</label>
-            <select id="animationSpeed" onchange="updateAnimationSpeed()">
-                <option value="fast">Nhanh</option>
-                <option value="normal" selected>Vừa</option>
-                <option value="slow">Chậm</option>
-            </select>
-        </div>
-        
-        <div class="info-box">
-            <p>🟢 Điểm đi: <span id="start-coords">Chưa chọn</span></p>
-            <p>🔴 Điểm đến: <span id="end-coords">Chưa chọn</span></p>
-            <p>📏 Quãng đường: <span id="distance-info">0 km</span></p>
-            <p>⏱️ Thời gian: <span id="time-info" style="color:red; font-weight:bold;">0 phút</span></p>
-        </div>
-
-        <div id="navigation-steps" class="navigation-steps">
-            <p class="nav-placeholder">Chưa có chỉ dẫn điều hướng.</p>
-        </div>
+        <details class="nav-accordion">
+            <summary>Chỉ đường chi tiết</summary>
+            <div id="navigation-steps" class="navigation-steps">
+                <p class="nav-placeholder">Chưa có chỉ dẫn điều hướng.</p>
+            </div>
+        </details>
 
         <div class="status-box">
             <p>Trạng thái: <span id="status-text" class="idle">Đang chờ...</span></p>
         </div>
 
-        <button id="reset-btn" onclick="resetMap()">Làm mới bản đồ</button>
+        <div class="panel-footer">
+            <button id="reset-btn" onclick="resetMap()">Làm mới bản đồ</button>
+        </div>
     </div>
 
     <div id="map"></div>
