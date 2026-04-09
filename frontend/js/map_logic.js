@@ -6,9 +6,11 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 let startMarker = null;
 let endMarker = null;
 let routePolyline = null;
+let routeSegmentPolylines = [];
 let jammedPoints = [];
 let floodedPoints = [];
 let obstacleMarkers = [];
+let transferMarkers = [];
 const TOP_K_ROUTES = 3;
 const ANIMATION_SPEED_PRESETS = {
     fast: { intervalMs: 8, batchSize: 5 },
@@ -30,6 +32,15 @@ const routeSelector = document.getElementById("routeSelector");
 const navigationStepsEl = document.getElementById("navigation-steps");
 const animationToggleBtn = document.getElementById("animation-toggle-btn");
 const animationSpeedSelect = document.getElementById("animationSpeed");
+const vehicleTypeSelect = document.getElementById("vehicleType");
+
+const MIXED_MODE_TEMPLATE = {
+    transferNodes: [
+        { lat: 21.00892, lng: 105.82041, name: "Trạm xe buýt Thái Hà" },
+        { lat: 21.01784, lng: 105.82562, name: "Ga Cát Linh" },
+    ],
+    transitLineName: "BRT/Tàu điện Cát Linh",
+};
 
 function toPoint(latlng) {
     return { lat: latlng.lat, lng: latlng.lng };
@@ -76,6 +87,80 @@ function renderNavigationSteps(instructions) {
             return `<div class="navigation-step"><span class="navigation-icon">${icon}</span><span class="navigation-text">${text}</span></div>`;
         })
         .join("");
+}
+
+function haversineDistanceM(pointA, pointB) {
+    const toRad = (value) => (value * Math.PI) / 180;
+    const radius = 6371000;
+    const lat1 = toRad(pointA.lat);
+    const lat2 = toRad(pointB.lat);
+    const dLat = toRad(pointB.lat - pointA.lat);
+    const dLon = toRad(pointB.lng - pointA.lng);
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+    return radius * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function clearRouteLayers() {
+    if (routePolyline) {
+        map.removeLayer(routePolyline);
+        routePolyline = null;
+    }
+    routeSegmentPolylines.forEach((polyline) => map.removeLayer(polyline));
+    routeSegmentPolylines = [];
+    transferMarkers.forEach((marker) => map.removeLayer(marker));
+    transferMarkers = [];
+}
+
+function renderMixedModeInstructions(route) {
+    if (!navigationStepsEl) return;
+    const legs = route.legs || [];
+    if (!legs.length) {
+        renderNavigationSteps([]);
+        return;
+    }
+
+    navigationStepsEl.innerHTML = legs
+        .map(
+            (leg, index) =>
+                `<div class="navigation-step multimodal-leg"><span class="navigation-icon">${leg.icon}</span><span class="navigation-text">Chặng ${index + 1}: ${leg.title} - ${formatDistanceMeters(leg.distance_m)}</span></div>`
+        )
+        .join("");
+}
+
+function buildMixedModeRoute(startPoint, endPoint) {
+    const [transferA, transferB] = MIXED_MODE_TEMPLATE.transferNodes;
+
+    const leg1Distance = haversineDistanceM(startPoint, transferA);
+    const leg2Distance = haversineDistanceM(transferA, transferB);
+    const leg3Distance = haversineDistanceM(transferB, endPoint);
+
+    const walkSpeed = 5 * 1000 / 3600;
+    const transitSpeed = 25 * 1000 / 3600;
+    const durationMin =
+        (leg1Distance / walkSpeed + leg2Distance / transitSpeed + leg3Distance / walkSpeed) / 60;
+
+    return {
+        mode: "mixed",
+        rank: 1,
+        explored_nodes: [],
+        path: [
+            { lat: startPoint.lat, lng: startPoint.lng },
+            { lat: transferA.lat, lng: transferA.lng },
+            { lat: transferB.lat, lng: transferB.lng },
+            { lat: endPoint.lat, lng: endPoint.lng },
+        ],
+        distance_m: leg1Distance + leg2Distance + leg3Distance,
+        duration_min: durationMin,
+        instructions: [],
+        transfer_nodes: [transferA, transferB],
+        legs: [
+            { icon: "🚶", title: "Đi bộ", distance_m: leg1Distance },
+            { icon: "🚆", title: `Lên tuyến ${MIXED_MODE_TEMPLATE.transitLineName}`, distance_m: leg2Distance },
+            { icon: "🚶", title: "Đi bộ đến đích", distance_m: leg3Distance },
+        ],
+    };
 }
 
 function updateStatus(message, className) {
@@ -132,9 +217,10 @@ function animateExploredNodes(exploredNodes, onComplete) {
 }
 
 function renderRouteWithAnimation(route, fitBounds = true) {
-    if (routePolyline) {
-        map.removeLayer(routePolyline);
-        routePolyline = null;
+    if (route.mode === "mixed") {
+        clearRouteLayers();
+        drawSelectedRoute(route, fitBounds);
+        return;
     }
     animateExploredNodes(route.explored_nodes || [], () => drawSelectedRoute(route, fitBounds));
 }
@@ -164,15 +250,59 @@ function drawSelectedRoute(route, fitBounds = true) {
         return;
     }
 
+    clearRouteLayers();
+
+    if (route.mode === "mixed") {
+        const path = (route.path || []).map(pointToLatLng).filter(Boolean);
+        if (path.length < 4) {
+            updateStatus("Lộ trình đa phương thức không hợp lệ.", "error");
+            return;
+        }
+
+        const leg1 = L.polyline([path[0], path[1]], {
+            color: "#5c7c64",
+            weight: 5,
+            opacity: 0.95,
+            dashArray: "5, 10",
+        }).addTo(map);
+        const leg2 = L.polyline([path[1], path[2]], {
+            color: "#1d4ed8",
+            weight: 8,
+            opacity: 0.95,
+        }).addTo(map);
+        const leg3 = L.polyline([path[2], path[3]], {
+            color: "#5c7c64",
+            weight: 5,
+            opacity: 0.95,
+            dashArray: "5, 10",
+        }).addTo(map);
+        routeSegmentPolylines = [leg1, leg2, leg3];
+
+        (route.transfer_nodes || []).forEach((node, idx) => {
+            const marker = L.circleMarker([node.lat, node.lng], {
+                radius: 8,
+                color: "#f59e0b",
+                fillColor: "#fbbf24",
+                fillOpacity: 0.95,
+                weight: 2,
+            })
+                .addTo(map)
+                .bindTooltip(node.name, { direction: "top", offset: [0, -8] })
+                .bindPopup(`${idx === 0 ? "Điểm trung chuyển 1" : "Điểm trung chuyển 2"}: ${node.name}`);
+            transferMarkers.push(marker);
+        });
+
+        if (fitBounds) {
+            const group = L.featureGroup([...routeSegmentPolylines, ...transferMarkers]);
+            map.fitBounds(group.getBounds(), { padding: [20, 20] });
+        }
+        return;
+    }
+
     const color = "#e53935";
     const latLngs = (route.path || [])
         .map(pointToLatLng)
         .filter((coord) => Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1]));
-
-    if (routePolyline) {
-        map.removeLayer(routePolyline);
-        routePolyline = null;
-    }
 
     if (!latLngs.length) {
         updateStatus("Không có dữ liệu đường đi hợp lệ.", "error");
@@ -199,7 +329,8 @@ function onRouteSelectionChange() {
     renderRouteWithAnimation(selectedRoute, false);
     distanceText.innerText = `${(selectedRoute.distance_m / 1000).toFixed(2)} km`;
     timeText.innerText = `${selectedRoute.duration_min.toFixed(1)} phút`;
-    renderNavigationSteps(selectedRoute.instructions || []);
+    if (selectedRoute.mode === "mixed") renderMixedModeInstructions(selectedRoute);
+    else renderNavigationSteps(selectedRoute.instructions || []);
     updateStatus(`Đang hiển thị tuyến ${selectedIndex + 1}.`, "success");
 }
 
@@ -266,8 +397,21 @@ function parseResponsePayload(response) {
 
 async function findShortestPath() {
     if (!startMarker || !endMarker) return;
+    const vehicle = vehicleTypeSelect?.value || "bike";
 
     updateStatus("Đang tính toán tuyến đường...", "loading");
+    if (vehicle === "mixed") {
+        stopExplorationAnimation();
+        clearExploredMarkers();
+        const start = toPoint(startMarker.getLatLng());
+        const end = toPoint(endMarker.getLatLng());
+        currentRoutes = [buildMixedModeRoute(start, end)];
+        syncRouteSelectorOptions(1);
+        routeSelector.value = "0";
+        onRouteSelectionChange();
+        updateStatus("Tìm lộ trình đa phương thức thành công (demo tĩnh).", "success");
+        return;
+    }
 
     try {
         const response = await fetch("http://localhost:5000/api/find-path", {
@@ -362,7 +506,7 @@ map.on("click", (event) => {
 function resetMap() {
     if (startMarker) map.removeLayer(startMarker);
     if (endMarker) map.removeLayer(endMarker);
-    if (routePolyline) map.removeLayer(routePolyline);
+    clearRouteLayers();
     stopExplorationAnimation();
     clearExploredMarkers();
     obstacleMarkers.forEach((marker) => map.removeLayer(marker));

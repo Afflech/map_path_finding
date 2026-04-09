@@ -126,6 +126,13 @@ body { display: flex; overflow: hidden; background: linear-gradient(120deg, #eef
 .navigation-step:last-child { border-bottom: none; }
 .navigation-icon { width: 20px; text-align: center; flex-shrink: 0; }
 .navigation-text { flex: 1; }
+.multimodal-leg {
+    background: linear-gradient(135deg, #f8fbff, #eef4ff);
+    border: 1px solid #d9e5ff;
+    border-radius: 10px;
+    padding: 8px;
+    margin-bottom: 6px;
+}
 .nav-placeholder { color: #7a8494; font-size: 13px; }
 
 .status-box { padding: 10px 12px; font-size: 13px; color: #475569; }
