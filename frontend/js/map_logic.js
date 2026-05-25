@@ -1,7 +1,66 @@
-const map = L.map("map").setView([21.012, 105.824], 15);
+const CONFIG = {
+    BACKEND_URL: window.APP_BACKEND_URL || "http://localhost:5000",
+};
+
+const map = L.map("map", { zoomControl: true }).setView([21.012, 105.824], 15);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "&copy; OpenStreetMap contributors",
 }).addTo(map);
+
+function _makePinIcon(color) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36">
+        <path d="M14 0C6.27 0 0 6.27 0 14c0 9.33 14 22 14 22S28 23.33 28 14C28 6.27 21.73 0 14 0z" fill="${color}"/>
+        <circle cx="14" cy="14" r="6" fill="#fff"/>
+    </svg>`;
+    return L.divIcon({
+        html: svg,
+        className: "",
+        iconSize: [28, 36],
+        iconAnchor: [14, 36],
+        popupAnchor: [0, -36],
+    });
+}
+const START_ICON = _makePinIcon("#00897b");
+const END_ICON   = _makePinIcon("#e53935");
+
+let arrowMarkers = [];
+
+function _bearing(a, b) {
+    const toRad = d => d * Math.PI / 180;
+    const toDeg = r => r * 180 / Math.PI;
+    const dLon = toRad(b[1] - a[1]);
+    const lat1 = toRad(a[0]), lat2 = toRad(b[0]);
+    const y = Math.sin(dLon) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+    return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function _arrowIcon(deg) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"
+        style="transform:rotate(${deg}deg);display:block;">
+        <polygon points="8,1 14,14 8,10 2,14" fill="#00897b" opacity="0.9"/>
+    </svg>`;
+    return L.divIcon({ html: svg, className: "", iconSize: [16, 16], iconAnchor: [8, 8] });
+}
+
+function _clearArrows() {
+    arrowMarkers.forEach(m => map.removeLayer(m));
+    arrowMarkers = [];
+}
+
+function _drawArrows(latLngs) {
+    _clearArrows();
+    if (latLngs.length < 2) return;
+    // Place an arrow every ~80px of screen distance, min 3 arrows
+    const step = Math.max(1, Math.floor(latLngs.length / Math.max(3, Math.floor(latLngs.length / 8))));
+    for (let i = 0; i + 1 < latLngs.length; i += step) {
+        const a = latLngs[i], b = latLngs[i + 1];
+        const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        const deg = _bearing(a, b);
+        const m = L.marker(mid, { icon: _arrowIcon(deg), interactive: false }).addTo(map);
+        arrowMarkers.push(m);
+    }
+}
 
 let startMarker = null;
 let endMarker = null;
@@ -111,6 +170,7 @@ function clearRouteLayers() {
     routeSegmentPolylines = [];
     transferMarkers.forEach((marker) => map.removeLayer(marker));
     transferMarkers = [];
+    _clearArrows();
 }
 
 function renderMixedModeInstructions(route) {
@@ -240,7 +300,7 @@ function drawPath(pathData) {
         return;
     }
 
-    routePolyline = L.polyline(latLngs, { color: "red", weight: 5, opacity: 0.75 }).addTo(map);
+    routePolyline = L.polyline(latLngs, { color: "#00897b", weight: 6, opacity: 0.95 }).addTo(map);
     map.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
 }
 
@@ -299,7 +359,7 @@ function drawSelectedRoute(route, fitBounds = true) {
         return;
     }
 
-    const color = "#e53935";
+    const color = "#00897b";
     const latLngs = (route.path || [])
         .map(pointToLatLng)
         .filter((coord) => Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1]));
@@ -309,7 +369,8 @@ function drawSelectedRoute(route, fitBounds = true) {
         return;
     }
 
-    routePolyline = L.polyline(latLngs, { color, weight: 7, opacity: 0.95 }).addTo(map);
+    routePolyline = L.polyline(latLngs, { color, weight: 6, opacity: 0.95 }).addTo(map);
+    _drawArrows(latLngs);
     if (fitBounds) map.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
 }
 
@@ -378,7 +439,6 @@ function buildRequestPayload() {
             jammed: jammedPoints,
             flooded: floodedPoints,
         },
-        // Backward compatibility for old backend parser.
         jammed: jammedPoints,
         flooded: floodedPoints,
     };
@@ -414,7 +474,7 @@ async function findShortestPath() {
     }
 
     try {
-        const response = await fetch("http://localhost:5000/api/find-path", {
+        const response = await fetch(`${CONFIG.BACKEND_URL}/api/find-path`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(buildRequestPayload()),
@@ -484,14 +544,14 @@ map.on("click", (event) => {
 
     if (mode === "route") {
         if (!startMarker) {
-            startMarker = L.marker([lat, lng]).addTo(map).bindPopup("Điểm xuất phát").openPopup();
+            startMarker = L.marker([lat, lng], { icon: START_ICON }).addTo(map).bindPopup("Điểm xuất phát").openPopup();
             startText.innerText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
             updateStatus("Đã chọn điểm đi.", "idle");
             return;
         }
 
         if (!endMarker) {
-            endMarker = L.marker([lat, lng]).addTo(map).bindPopup("Điểm đến").openPopup();
+            endMarker = L.marker([lat, lng], { icon: END_ICON }).addTo(map).bindPopup("Điểm đến").openPopup();
             endText.innerText = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
             findShortestPath();
         }
@@ -546,7 +606,7 @@ function drawDistrictBoundary() {
             }).addTo(map);
         })
         .catch(() => {
-            // Boundary overlay is optional; ignore fetch errors silently.
+            
         });
 }
 

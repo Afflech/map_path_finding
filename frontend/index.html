@@ -9,34 +9,60 @@
 </head>
 <body>
 
-    <div id="control-panel">
-        <div class="panel-head">
-            <h2>AI Pathfinding</h2>
-            <p>Chọn chế độ rồi click lên bản đồ để tính tuyến.</p>
+    <div id="map"></div>
+
+    <!-- Floating Control Card – top-left -->
+    <div id="control-card">
+        <div class="card-header">
+            <div class="logo-row">
+                <span class="logo-icon">🗺️</span>
+                <span class="logo-text"> Công cụ tìm đường thông minh</span>
+            </div>
+            <button class="icon-btn" onclick="resetMap()" title="Làm mới bản đồ">↺</button>
         </div>
 
-        <div class="controls-card">
-            <div class="control-group">
-                <label>Chế độ click map</label>
-                <select id="clickMode">
-                    <option value="route" selected>📍 Chọn Điểm Đi/Đến</option>
-                    <option value="jammed">🔴 Đánh dấu Tắc đường</option>
-                    <option value="flooded">🔵 Đánh dấu Ngập lụt</option>
-                </select>
+        <!-- Origin / Destination fields -->
+        <div class="coord-fields">
+            <div class="coord-row">
+                <span class="coord-dot dot-green"></span>
+                <div class="coord-input-wrap">
+                    <span class="coord-label">Điểm đi</span>
+                    <span class="coord-value" id="start-coords">Chưa chọn</span>
+                </div>
             </div>
+            <div class="coord-divider"></div>
+            <div class="coord-row">
+                <span class="coord-dot dot-red"></span>
+                <div class="coord-input-wrap">
+                    <span class="coord-label">Điểm đến</span>
+                    <span class="coord-value" id="end-coords">Chưa chọn</span>
+                </div>
+            </div>
+        </div>
 
-            <div class="control-group">
-                <label>Phương tiện</label>
+        <!-- Controls -->
+        <div class="controls-section">
+            <div class="ctrl-row">
+                <span class="ctrl-icon">🚗</span>
                 <select id="vehicleType" onchange="triggerRouteRecalc()">
                     <option value="walk">Đi bộ (5 km/h)</option>
                     <option value="bike" selected>Xe máy (30 km/h)</option>
                     <option value="car">Ô tô (50 km/h)</option>
-                    <option value="mixed">Đa phương tiện (Mixed Mode)</option>
+                    <option value="mixed">Đa phương tiện</option>
                 </select>
             </div>
 
-            <div class="control-group">
-                <label>Tuyến hiển thị</label>
+            <div class="ctrl-row">
+                <span class="ctrl-icon">📍</span>
+                <select id="clickMode">
+                    <option value="route" selected>Chọn Điểm Đi/Đến</option>
+                    <option value="jammed">Đánh dấu Tắc đường</option>
+                    <option value="flooded">Đánh dấu Ngập lụt</option>
+                </select>
+            </div>
+
+            <div class="ctrl-row">
+                <span class="ctrl-icon">🛣️</span>
                 <select id="routeSelector" onchange="onRouteSelectionChange()">
                     <option value="0" selected>Tuyến 1</option>
                     <option value="1">Tuyến 2</option>
@@ -44,19 +70,19 @@
                 </select>
             </div>
 
-            <div class="control-group">
-                <label>Animation</label>
-                <div class="toggle-row">
-                    <span class="toggle-label">Bật/Tắt</span>
-                    <label class="switch">
-                        <input id="animation-toggle-btn" type="checkbox" checked onchange="toggleAnimation()">
-                        <span class="slider"></span>
-                    </label>
+            <div class="ctrl-row ctrl-row--between">
+                <div class="ctrl-left">
+                    <span class="ctrl-icon">▶</span>
+                    <span class="ctrl-text">Animation</span>
                 </div>
+                <label class="md-switch">
+                    <input id="animation-toggle-btn" type="checkbox" checked onchange="toggleAnimation()">
+                    <span class="md-track"><span class="md-thumb"></span></span>
+                </label>
             </div>
 
-            <div class="control-group">
-                <label>Tốc độ animation</label>
+            <div class="ctrl-row">
+                <span class="ctrl-icon">⚡</span>
                 <select id="animationSpeed" onchange="updateAnimationSpeed()">
                     <option value="fast">Nhanh</option>
                     <option value="normal" selected>Vừa</option>
@@ -65,39 +91,36 @@
             </div>
         </div>
 
-        <div class="route-meta-card">
-            <p class="point-line">🟢 Điểm đi: <span id="start-coords">Chưa chọn</span></p>
-            <p class="point-line">🔴 Điểm đến: <span id="end-coords">Chưa chọn</span></p>
-
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <p class="stat-label">Quãng đường</p>
-                    <p class="stat-value" id="distance-info">0 km</p>
-                </div>
-                <div class="stat-card">
-                    <p class="stat-label">Thời gian</p>
-                    <p class="stat-value" id="time-info">0 phút</p>
-                </div>
-            </div>
-        </div>
-
+        <!-- Nav steps accordion -->
         <details class="nav-accordion">
             <summary>Chi tiết lộ trình</summary>
             <div id="navigation-steps" class="navigation-steps">
                 <p class="nav-placeholder">Chưa có chỉ dẫn điều hướng.</p>
             </div>
         </details>
-
-        <div class="status-box">
-            <p>Trạng thái: <span id="status-text" class="idle">Đang chờ...</span></p>
-        </div>
-
-        <div class="panel-footer">
-            <button id="reset-btn" onclick="resetMap()">Làm mới bản đồ</button>
-        </div>
     </div>
 
-    <div id="map"></div>
+    <!-- Floating Result Card – bottom-left -->
+    <div id="result-card">
+        <div class="result-row">
+            <span class="result-icon">📏</span>
+            <div>
+                <div class="result-label">Quãng đường</div>
+                <div class="result-value" id="distance-info">0 km</div>
+            </div>
+        </div>
+        <div class="result-divider"></div>
+        <div class="result-row">
+            <span class="result-icon">⏱</span>
+            <div>
+                <div class="result-label">Thời gian</div>
+                <div class="result-value" id="time-info">0 phút</div>
+            </div>
+        </div>
+        <div class="result-status">
+            <span id="status-text" class="idle">Đang chờ...</span>
+        </div>
+    </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="js/map_logic.js"></script>

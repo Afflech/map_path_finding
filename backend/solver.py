@@ -318,26 +318,13 @@ def find_shortest_path(
         node_penalties = {}
 
         def weight_func(u, v, edge_data):
-            attrs = edge_data if "length" in edge_data else None
-            if attrs is None:
-                attrs, best_weight, _ = _pick_best_edge_attrs(
-                    graph, u, v, speed_ms, vehicle, jammed_nodes, flooded_nodes
-                )
-                if not math.isfinite(best_weight):
-                    return best_weight
-                node_factor = max(node_penalties.get(u, 1.0), node_penalties.get(v, 1.0))
-                return best_weight * node_factor
-
-            length = _flatten_length(attrs.get("length", 1.0))
-            travel_time = length / speed_ms
-            if u in jammed_nodes or v in jammed_nodes:
-                travel_time *= JAMMED_PENALTY_FACTOR
-            if u in flooded_nodes or v in flooded_nodes:
-                if vehicle in FLOODED_BLOCKED_VEHICLES:
-                    return float("inf")
-                travel_time *= FLOODED_BIKE_PENALTY_FACTOR
+            _, best_weight, _ = _pick_best_edge_attrs(
+                graph, u, v, speed_ms, vehicle, jammed_nodes, flooded_nodes
+            )
+            if not math.isfinite(best_weight):
+                return best_weight
             node_factor = max(node_penalties.get(u, 1.0), node_penalties.get(v, 1.0))
-            return travel_time * node_factor
+            return best_weight * node_factor
 
         route_nodes_list = []
         route_payloads = []

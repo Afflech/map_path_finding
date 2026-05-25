@@ -18,8 +18,18 @@ def api_find_path():
 
     start_coords = data['start']
     end_coords = data['end']
+
     vehicle = data.get('vehicle', 'bike')
-    top_k = data.get('top_k', 3)
+    if vehicle not in ('walk', 'bike', 'car'):
+        return jsonify({"status": "error", "message": "vehicle phải là walk, bike hoặc car."}), 400
+
+    try:
+        top_k = int(data.get('top_k', 3))
+        if not (1 <= top_k <= 10):
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "top_k phải là số nguyên từ 1 đến 10."}), 400
+
     obstacles = data.get('obstacles', {})
     jammed = data.get('jammed', obstacles.get('jammed', []))
     flooded = data.get('flooded', obstacles.get('flooded', []))
