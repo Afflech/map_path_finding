@@ -34,8 +34,20 @@ def api_find_path():
     jammed = data.get('jammed', obstacles.get('jammed', []))
     flooded = data.get('flooded', obstacles.get('flooded', []))
 
+    traffic_level = data.get('traffic_level', 'Normal')
+    if traffic_level not in ('Low', 'Normal', 'High'):
+        return jsonify({"status": "error", "message": "traffic_level phải là Low, Normal hoặc High."}), 400
+
+    try:
+        rain_mm = float(data.get('rain_mm', 0.0))
+        if rain_mm < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "rain_mm phải là số không âm."}), 400
+
     result = find_shortest_path(
-        map_graph, start_coords, end_coords, vehicle, jammed, flooded, top_k
+        map_graph, start_coords, end_coords, vehicle, jammed, flooded, top_k,
+        traffic_level=traffic_level, rain_mm=rain_mm
     )
 
     if result.get("status") == "success":

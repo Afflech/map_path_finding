@@ -46,10 +46,28 @@
                 <span class="ctrl-icon">🚗</span>
                 <select id="vehicleType" onchange="triggerRouteRecalc()">
                     <option value="walk">Đi bộ (5 km/h)</option>
-                    <option value="bike" selected>Xe máy (30 km/h)</option>
-                    <option value="car">Ô tô (50 km/h)</option>
-                    <option value="mixed">Đa phương tiện</option>
+                    <option value="bike" selected>Xe máy (25 km/h)</option>
+                    <option value="car">Ô tô (35 km/h)</option>
                 </select>
+            </div>
+
+            <div class="ctrl-row">
+                <span class="ctrl-icon">🚦</span>
+                <select id="trafficLevel" onchange="triggerRouteRecalc()">
+                    <option value="Low">Tắc đường: Thấp (×1.2)</option>
+                    <option value="Normal" selected>Tắc đường: Bình thường (×1.5)</option>
+                    <option value="High">Tắc đường: Cao (×2.0)</option>
+                </select>
+            </div>
+
+            <div class="ctrl-row">
+                <span class="ctrl-icon">🌧️</span>
+                <div style="display:flex;align-items:center;gap:6px;flex:1">
+                    <input id="rainMm" type="range" min="0" max="100" step="5" value="0"
+                        oninput="document.getElementById('rainMmVal').innerText=this.value+'mm';triggerRouteRecalc()"
+                        style="flex:1">
+                    <span id="rainMmVal" style="min-width:40px;font-size:12px">0mm</span>
+                </div>
             </div>
 
             <div class="ctrl-row">

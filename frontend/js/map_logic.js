@@ -277,11 +277,6 @@ function animateExploredNodes(exploredNodes, onComplete) {
 }
 
 function renderRouteWithAnimation(route, fitBounds = true) {
-    if (route.mode === "mixed") {
-        clearRouteLayers();
-        drawSelectedRoute(route, fitBounds);
-        return;
-    }
     animateExploredNodes(route.explored_nodes || [], () => drawSelectedRoute(route, fitBounds));
 }
 
@@ -304,6 +299,24 @@ function drawPath(pathData) {
     map.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
 }
 
+function renderMultimodalSegments(segments) {
+    if (!navigationStepsEl) return;
+    if (!Array.isArray(segments) || !segments.length) {
+        renderNavigationSteps([]);
+        return;
+    }
+    const modeIcon = { walk: "🚶", car: "🚗", bike: "🏍️" };
+    navigationStepsEl.innerHTML = segments.map((seg, i) => {
+        const icon = modeIcon[seg.mode] || "📍";
+        const dist = formatDistanceMeters(seg.distance_m || 0);
+        const time = seg.duration_min ? `${seg.duration_min.toFixed(1)} phút` : "";
+        return `<div class="navigation-step multimodal-leg">
+            <span class="navigation-icon">${icon}</span>
+            <span class="navigation-text">Chặng ${i + 1}: ${seg.label || seg.mode} — ${dist}${time ? " / " + time : ""}</span>
+        </div>`;
+    }).join("");
+}
+
 function drawSelectedRoute(route, fitBounds = true) {
     if (!route) {
         updateStatus("Tuyến đã chọn không tồn tại.", "error");
@@ -312,54 +325,33 @@ function drawSelectedRoute(route, fitBounds = true) {
 
     clearRouteLayers();
 
-    if (route.mode === "mixed") {
-        const path = (route.path || []).map(pointToLatLng).filter(Boolean);
-        if (path.length < 4) {
-            updateStatus("Lộ trình đa phương thức không hợp lệ.", "error");
-            return;
-        }
+    // Multi-modal từ backend: vẽ từng chặng màu khác nhau
+    if (route.multimodal && route.segments && route.segments.length) {
+        const segColors = { walk: "#5c7c64", car: "#1d4ed8", bike: "#00897b" };
+        const segDash = { walk: "5, 10", car: null, bike: null };
+        let allLatLngs = [];
 
-        const leg1 = L.polyline([path[0], path[1]], {
-            color: "#5c7c64",
-            weight: 5,
-            opacity: 0.95,
-            dashArray: "5, 10",
-        }).addTo(map);
-        const leg2 = L.polyline([path[1], path[2]], {
-            color: "#1d4ed8",
-            weight: 8,
-            opacity: 0.95,
-        }).addTo(map);
-        const leg3 = L.polyline([path[2], path[3]], {
-            color: "#5c7c64",
-            weight: 5,
-            opacity: 0.95,
-            dashArray: "5, 10",
-        }).addTo(map);
-        routeSegmentPolylines = [leg1, leg2, leg3];
-
-        (route.transfer_nodes || []).forEach((node, idx) => {
-            const marker = L.circleMarker([node.lat, node.lng], {
-                radius: 8,
-                color: "#f59e0b",
-                fillColor: "#fbbf24",
-                fillOpacity: 0.95,
-                weight: 2,
-            })
-                .addTo(map)
-                .bindTooltip(node.name, { direction: "top", offset: [0, -8] })
-                .bindPopup(`${idx === 0 ? "Điểm trung chuyển 1" : "Điểm trung chuyển 2"}: ${node.name}`);
-            transferMarkers.push(marker);
+        route.segments.forEach((seg) => {
+            const latLngs = (seg.path || [])
+                .map(pointToLatLng)
+                .filter((c) => Array.isArray(c) && Number.isFinite(c[0]));
+            if (!latLngs.length) return;
+            allLatLngs = allLatLngs.concat(latLngs);
+            const color = segColors[seg.mode] || "#00897b";
+            const dash = segDash[seg.mode];
+            const poly = L.polyline(latLngs, {
+                color, weight: seg.mode === "car" ? 7 : 5, opacity: 0.95,
+                ...(dash ? { dashArray: dash } : {}),
+            }).addTo(map);
+            routeSegmentPolylines.push(poly);
         });
 
-        if (fitBounds) {
-            const group = L.featureGroup([...routeSegmentPolylines, ...transferMarkers]);
-            map.fitBounds(group.getBounds(), { padding: [20, 20] });
+        if (fitBounds && allLatLngs.length) {
+            map.fitBounds(L.latLngBounds(allLatLngs), { padding: [20, 20] });
         }
         return;
     }
 
-    const color = "#00897b";
     const latLngs = (route.path || [])
         .map(pointToLatLng)
         .filter((coord) => Array.isArray(coord) && Number.isFinite(coord[0]) && Number.isFinite(coord[1]));
@@ -369,7 +361,7 @@ function drawSelectedRoute(route, fitBounds = true) {
         return;
     }
 
-    routePolyline = L.polyline(latLngs, { color, weight: 6, opacity: 0.95 }).addTo(map);
+    routePolyline = L.polyline(latLngs, { color: "#00897b", weight: 6, opacity: 0.95 }).addTo(map);
     _drawArrows(latLngs);
     if (fitBounds) map.fitBounds(routePolyline.getBounds(), { padding: [20, 20] });
 }
@@ -390,8 +382,11 @@ function onRouteSelectionChange() {
     renderRouteWithAnimation(selectedRoute, false);
     distanceText.innerText = `${(selectedRoute.distance_m / 1000).toFixed(2)} km`;
     timeText.innerText = `${selectedRoute.duration_min.toFixed(1)} phút`;
-    if (selectedRoute.mode === "mixed") renderMixedModeInstructions(selectedRoute);
-    else renderNavigationSteps(selectedRoute.instructions || []);
+    if (selectedRoute.multimodal && selectedRoute.segments) {
+        renderMultimodalSegments(selectedRoute.segments);
+    } else {
+        renderNavigationSteps(selectedRoute.instructions || []);
+    }
     updateStatus(`Đang hiển thị tuyến ${selectedIndex + 1}.`, "success");
 }
 
@@ -435,6 +430,8 @@ function buildRequestPayload() {
         end,
         vehicle: document.getElementById("vehicleType").value,
         top_k: TOP_K_ROUTES,
+        traffic_level: document.getElementById("trafficLevel")?.value || "Normal",
+        rain_mm: parseFloat(document.getElementById("rainMm")?.value || "0"),
         obstacles: {
             jammed: jammedPoints,
             flooded: floodedPoints,
@@ -457,21 +454,8 @@ function parseResponsePayload(response) {
 
 async function findShortestPath() {
     if (!startMarker || !endMarker) return;
-    const vehicle = vehicleTypeSelect?.value || "bike";
 
     updateStatus("Đang tính toán tuyến đường...", "loading");
-    if (vehicle === "mixed") {
-        stopExplorationAnimation();
-        clearExploredMarkers();
-        const start = toPoint(startMarker.getLatLng());
-        const end = toPoint(endMarker.getLatLng());
-        currentRoutes = [buildMixedModeRoute(start, end)];
-        syncRouteSelectorOptions(1);
-        routeSelector.value = "0";
-        onRouteSelectionChange();
-        updateStatus("Tìm lộ trình đa phương thức thành công (demo tĩnh).", "success");
-        return;
-    }
 
     try {
         const response = await fetch(`${CONFIG.BACKEND_URL}/api/find-path`, {
