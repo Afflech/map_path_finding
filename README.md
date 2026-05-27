@@ -1,10 +1,9 @@
 # 🗺️ Báo cáo Bài tập lớn: Ứng dụng AI trong Định tuyến Giao thông Khu vực Đống Đa
 
 > **Môn học:** Nhập môn Trí tuệ Nhân tạo  
-> **Trường:** *(Điền tên trường)*  
-> **Học kỳ:** *(Điền học kỳ / năm học)*
+> **Trường:** *Trường Công nghệ Thông tin và Truyền thông *  
+> **Học kỳ:** *20252*
 
-![UI Demo](link_anh)
 
 ---
 
@@ -202,19 +201,6 @@ Mở file `frontend/index.html` trực tiếp trong trình duyệt, hoặc dùng
 
 ---
 
-## 7. Nhóm tác giả
-
-| STT | Họ và Tên | Nhiệm vụ |
-|:---:|---|---|
-| 1 | | |
-| 2 | | |
-| 3 | | |
-| 4 | | |
-
----
-
 <div align="center">
-
-*Đồ án môn Nhập môn Trí tuệ Nhân tạo — *(Tên trường)* — *(Năm học)**
 
 </div>
