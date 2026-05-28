@@ -66,6 +66,7 @@ let startMarker = null;
 let endMarker = null;
 let routePolyline = null;
 let routeSegmentPolylines = [];
+let floodedEdgePolylines = [];
 let jammedPoints = [];
 let floodedPoints = [];
 let obstacleMarkers = [];
@@ -168,9 +169,41 @@ function clearRouteLayers() {
     }
     routeSegmentPolylines.forEach((polyline) => map.removeLayer(polyline));
     routeSegmentPolylines = [];
+    floodedEdgePolylines.forEach((polyline) => map.removeLayer(polyline));
+    floodedEdgePolylines = [];
     transferMarkers.forEach((marker) => map.removeLayer(marker));
     transferMarkers = [];
     _clearArrows();
+}
+
+function drawFloodedEdges(edges) {
+    floodedEdgePolylines.forEach((p) => map.removeLayer(p));
+    floodedEdgePolylines = [];
+    if (!Array.isArray(edges) || !edges.length) return;
+    // Lưu lại để toggle có thể dùng lại
+    drawFloodedEdges._lastEdges = edges;
+    const visible = document.getElementById("flood-layer-toggle")?.checked !== false;
+    if (!visible) return;
+    edges.forEach(([a, b]) => {
+        if (!a || !b) return;
+        const poly = L.polyline([a, b], {
+            color: "#1565c0",
+            weight: 3,
+            opacity: 0.7,
+            interactive: false,
+        }).addTo(map);
+        floodedEdgePolylines.push(poly);
+    });
+}
+
+function toggleFloodLayer() {
+    const visible = document.getElementById("flood-layer-toggle")?.checked;
+    if (visible) {
+        drawFloodedEdges(drawFloodedEdges._lastEdges || []);
+    } else {
+        floodedEdgePolylines.forEach((p) => map.removeLayer(p));
+        floodedEdgePolylines = [];
+    }
 }
 
 function renderMixedModeInstructions(route) {
@@ -484,6 +517,10 @@ async function findShortestPath() {
                       rank: 1,
                   },
               ];
+
+        // Vẽ các tuyến đường bị ngập màu xanh
+        const floodedEdges = data.flooded_edges || data.data?.flooded_edges || [];
+        drawFloodedEdges(floodedEdges);
 
         syncRouteSelectorOptions(currentRoutes.length);
         onRouteSelectionChange();

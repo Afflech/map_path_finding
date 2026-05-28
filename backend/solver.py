@@ -430,7 +430,7 @@ def find_shortest_path(
         }
 
         # Áp dụng điều kiện động (traffic + flood) lên đồ thị
-        apply_mock_conditions(graph, traffic_level, float(rain_mm))
+        _, flooded_edge_set = apply_mock_conditions(graph, traffic_level, float(rain_mm))
 
         speed_kmh = VEHICLE_SPEED_KMH.get(vehicle, VEHICLE_SPEED_KMH["bike"])
         speed_ms = speed_kmh / 3.6
@@ -541,14 +541,28 @@ def find_shortest_path(
 
         primary_route = route_payloads[0]
         primary_path_legacy = [[point["lat"], point["lng"]] for point in primary_route["path"]]
+
+        # Tọa độ các cạnh bị ngập để frontend vẽ màu xanh
+        flooded_edges_coords = []
+        for u, v in flooded_edge_set:
+            if u in graph.nodes and v in graph.nodes:
+                u_data = graph.nodes[u]
+                v_data = graph.nodes[v]
+                flooded_edges_coords.append([
+                    [float(u_data["y"]), float(u_data["x"])],
+                    [float(v_data["y"]), float(v_data["x"])],
+                ])
+
         return {
             "status": "success",
+            "flooded_edges": flooded_edges_coords,
             "data": {
                 "path": primary_route["path"],
                 "explored_nodes": primary_route["explored_nodes"],
                 "distance_m": primary_route["distance_m"],
                 "duration_min": primary_route["duration_min"],
                 "routes": route_payloads,
+                "flooded_edges": flooded_edges_coords,
             },
             # Backward compatibility with old frontend schema.
             "path": primary_path_legacy,

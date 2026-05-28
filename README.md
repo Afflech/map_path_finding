@@ -1,8 +1,8 @@
 # 🗺️ Báo cáo Bài tập lớn: Ứng dụng AI trong Định tuyến Giao thông Khu vực Đống Đa
 
 > **Môn học:** Nhập môn Trí tuệ Nhân tạo  
-> **Trường:** *Trường Công nghệ Thông tin và Truyền thông *  
-> **Học kỳ:** *20252*
+> **Trường:** Trường Công nghệ Thông tin và Truyền thông
+> **Học kỳ:** 20252
 
 
 ---
