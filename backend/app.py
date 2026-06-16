@@ -45,9 +45,18 @@ def api_find_path():
     except (TypeError, ValueError):
         return jsonify({"status": "error", "message": "rain_mm phải là số không âm."}), 400
 
+    algorithm = data.get('algorithm', 'astar')
+    if algorithm not in ('astar', 'bidirectional', 'dstar_lite'):
+        return jsonify({"status": "error", "message": "algorithm phải là astar, bidirectional hoặc dstar_lite."}), 400
+
+    turn_cost = data.get('turn_cost', False)
+    if not isinstance(turn_cost, bool):
+        turn_cost = str(turn_cost).lower() in ('true', '1', 'yes')
+
     result = find_shortest_path(
         map_graph, start_coords, end_coords, vehicle, jammed, flooded, top_k,
-        traffic_level=traffic_level, rain_mm=rain_mm
+        traffic_level=traffic_level, rain_mm=rain_mm,
+        algorithm=algorithm, turn_cost=turn_cost,
     )
 
     if result.get("status") == "success":

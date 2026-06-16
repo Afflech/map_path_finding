@@ -19,6 +19,10 @@ RANDOM_NODE_PENALTY_MIN = 1.10
 RANDOM_NODE_PENALTY_MAX = 1.45
 MIN_ROUTE_DIVERGENCE_RATIO = 0.08
 
+TURN_COST_SECONDS = {"straight": 0.0, "right": 5.0, "left": 15.0, "u_turn": 30.0}
+TURN_THRESHOLD_DEG = 25.0
+UTURN_THRESHOLD_DEG = 150.0
+
 # Các loại đường ô tô được phép đi
 CAR_ALLOWED_HIGHWAY = {
     "motorway", "trunk", "primary", "secondary", "tertiary",
@@ -177,6 +181,31 @@ def _flatten_length(length):
     return float(length)
 
 
+def _compute_bearing(graph, u, v):
+    node_u = graph.nodes[u]
+    node_v = graph.nodes[v]
+    lat1 = math.radians(float(node_u["y"]))
+    lat2 = math.radians(float(node_v["y"]))
+    delta_lon = math.radians(float(node_v["x"]) - float(node_u["x"]))
+    y_val = math.sin(delta_lon) * math.cos(lat2)
+    x_val = math.cos(lat1) * math.sin(lat2) - (
+        math.sin(lat1) * math.cos(lat2) * math.cos(delta_lon)
+    )
+    return (math.degrees(math.atan2(y_val, x_val)) + 360.0) % 360.0
+
+
+def _classify_turn(bearing_in, bearing_out):
+    delta = (bearing_out - bearing_in + 540.0) % 360.0 - 180.0
+    abs_delta = abs(delta)
+    if abs_delta <= TURN_THRESHOLD_DEG:
+        return "straight", TURN_COST_SECONDS["straight"]
+    if abs_delta >= UTURN_THRESHOLD_DEG:
+        return "u_turn", TURN_COST_SECONDS["u_turn"]
+    if delta > 0:
+        return "right", TURN_COST_SECONDS["right"]
+    return "left", TURN_COST_SECONDS["left"]
+
+
 def _pick_best_edge_attrs(graph, u, v, speed_ms, vehicle, jammed_nodes, flooded_nodes):
     edges_between = graph.get_edge_data(u, v, default={})
     if not edges_between:
@@ -225,17 +254,17 @@ def _pick_best_edge_attrs(graph, u, v, speed_ms, vehicle, jammed_nodes, flooded_
     return best_attrs, best_weight, best_length
 
 
-def _astar_path_with_exploration(graph, source, target, heuristic, weight):
+def _astar_path_with_exploration(graph, source, target, heuristic, weight, turn_cost_enabled=False):
     push = heappush
     pop = heappop
     c = count()
-    queue = [(0.0, next(c), source, 0.0, None)]
+    queue = [(0.0, next(c), source, 0.0, None, None)]
     enqueued = {}
     explored = {}
     explored_order = []
 
     while queue:
-        _, __, current, dist, parent = pop(queue)
+        _, __, current, dist, parent, incoming_bearing = pop(queue)
         if current in explored:
             continue
         explored[current] = parent
@@ -254,6 +283,14 @@ def _astar_path_with_exploration(graph, source, target, heuristic, weight):
             cost = weight(current, neighbor, edge_data)
             if not math.isfinite(cost):
                 continue
+
+            new_bearing = None
+            if turn_cost_enabled:
+                new_bearing = _compute_bearing(graph, current, neighbor)
+                if incoming_bearing is not None:
+                    _, turn_penalty = _classify_turn(incoming_bearing, new_bearing)
+                    cost += turn_penalty
+
             ncost = dist + cost
             if neighbor in enqueued:
                 qcost, h_val = enqueued[neighbor]
@@ -263,9 +300,129 @@ def _astar_path_with_exploration(graph, source, target, heuristic, weight):
                 h_val = heuristic(neighbor, target)
 
             enqueued[neighbor] = (ncost, h_val)
-            push(queue, (ncost + h_val, next(c), neighbor, ncost, current))
+            push(queue, (ncost + h_val, next(c), neighbor, ncost, current, new_bearing))
 
     raise nx.NetworkXNoPath
+
+
+def _bidirectional_astar_with_exploration(graph, source, target, heuristic, weight_forward, weight_backward):
+    push = heappush
+    pop = heappop
+    c = count()
+
+    if source == target:
+        return [source], [source], []
+
+    queue_f = [(0.0, next(c), source, 0.0, None)]
+    queue_b = [(0.0, next(c), target, 0.0, None)]
+
+    enqueued_f = {source: (0.0, heuristic(source, target))}
+    enqueued_b = {target: (0.0, heuristic(target, source))}
+
+    explored_f = {}
+    explored_b = {}
+    explored_order_f = []
+    explored_order_b = []
+
+    g_f = {source: 0.0}
+    g_b = {target: 0.0}
+
+    best_cost = float("inf")
+    meeting_node = None
+
+    def _expand_forward():
+        nonlocal best_cost, meeting_node
+        if not queue_f:
+            return float("inf")
+        f_val, _, current, dist, parent = pop(queue_f)
+        if current in explored_f:
+            return f_val
+        explored_f[current] = parent
+        explored_order_f.append(current)
+        g_f[current] = dist
+
+        if current in explored_b:
+            total = dist + g_b[current]
+            if total < best_cost:
+                best_cost = total
+                meeting_node = current
+
+        for neighbor, edge_data in graph[current].items():
+            cost = weight_forward(current, neighbor, edge_data)
+            if not math.isfinite(cost):
+                continue
+            ncost = dist + cost
+            if neighbor in enqueued_f:
+                if enqueued_f[neighbor][0] <= ncost:
+                    continue
+            h_val = heuristic(neighbor, target)
+            enqueued_f[neighbor] = (ncost, h_val)
+            g_f[neighbor] = ncost
+            push(queue_f, (ncost + h_val, next(c), neighbor, ncost, current))
+        return f_val
+
+    def _expand_backward():
+        nonlocal best_cost, meeting_node
+        if not queue_b:
+            return float("inf")
+        f_val, _, current, dist, parent = pop(queue_b)
+        if current in explored_b:
+            return f_val
+        explored_b[current] = parent
+        explored_order_b.append(current)
+        g_b[current] = dist
+
+        if current in explored_f:
+            total = g_f[current] + dist
+            if total < best_cost:
+                best_cost = total
+                meeting_node = current
+
+        for pred in graph.predecessors(current):
+            edge_data = graph[pred][current]
+            cost = weight_backward(pred, current, edge_data)
+            if not math.isfinite(cost):
+                continue
+            ncost = dist + cost
+            if pred in enqueued_b:
+                if enqueued_b[pred][0] <= ncost:
+                    continue
+            h_val = heuristic(pred, source)
+            enqueued_b[pred] = (ncost, h_val)
+            g_b[pred] = ncost
+            push(queue_b, (ncost + h_val, next(c), pred, ncost, current))
+        return f_val
+
+    while queue_f or queue_b:
+        min_f = queue_f[0][0] if queue_f else float("inf")
+        min_b = queue_b[0][0] if queue_b else float("inf")
+
+        if min(min_f, min_b) >= best_cost:
+            break
+
+        if min_f <= min_b:
+            _expand_forward()
+        else:
+            _expand_backward()
+
+    if meeting_node is None:
+        raise nx.NetworkXNoPath
+
+    path_forward = []
+    node = meeting_node
+    while node is not None:
+        path_forward.append(node)
+        node = explored_f.get(node)
+    path_forward.reverse()
+
+    path_backward = []
+    node = explored_b.get(meeting_node)
+    while node is not None:
+        path_backward.append(node)
+        node = explored_b.get(node)
+
+    full_path = path_forward + path_backward
+    return full_path, explored_order_f, explored_order_b
 
 
 def _route_to_payload(
@@ -277,6 +434,8 @@ def _route_to_payload(
     jammed_nodes,
     flooded_nodes,
     node_penalties,
+    explored_backward=None,
+    turn_cost_enabled=False,
 ):
     route_coords = []
     total_distance = 0.0
@@ -299,28 +458,20 @@ def _route_to_payload(
         total_distance += edge_length
         total_time_sec += edge_weight
 
-        node_u = graph.nodes[u]
-        node_v = graph.nodes[v]
         current_bearing = edge_attrs.get("bearing")
         if current_bearing is None:
-            lat1 = math.radians(float(node_u["y"]))
-            lat2 = math.radians(float(node_v["y"]))
-            delta_lon = math.radians(float(node_v["x"]) - float(node_u["x"]))
-            y_val = math.sin(delta_lon) * math.cos(lat2)
-            x_val = math.cos(lat1) * math.sin(lat2) - (
-                math.sin(lat1) * math.cos(lat2) * math.cos(delta_lon)
-            )
-            current_bearing = (math.degrees(math.atan2(y_val, x_val)) + 360.0) % 360.0
+            current_bearing = _compute_bearing(graph, u, v)
         else:
             current_bearing = float(current_bearing)
 
         turn_action = "straight"
+        turn_penalty_s = 0.0
         if previous_bearing is not None:
-            delta = (current_bearing - previous_bearing + 540.0) % 360.0 - 180.0
-            if delta <= -25.0:
-                turn_action = "left"
-            elif delta >= 25.0:
-                turn_action = "right"
+            turn_action, turn_penalty_s = _classify_turn(previous_bearing, current_bearing)
+            if turn_action == "u_turn":
+                turn_action = "straight"
+            if turn_cost_enabled:
+                total_time_sec += turn_penalty_s
 
         street_name = edge_attrs.get("name", "Đường không tên")
         if isinstance(street_name, list):
@@ -328,13 +479,14 @@ def _route_to_payload(
         if not street_name:
             street_name = "Đường không tên"
 
-        instructions.append(
-            {
-                "action": turn_action,
-                "street": str(street_name),
-                "distance_m": round(edge_length, 1),
-            }
-        )
+        step = {
+            "action": turn_action,
+            "street": str(street_name),
+            "distance_m": round(edge_length, 1),
+        }
+        if turn_cost_enabled and turn_penalty_s > 0:
+            step["turn_penalty_s"] = round(turn_penalty_s, 1)
+        instructions.append(step)
         previous_bearing = current_bearing
 
         geometry = edge_attrs.get("geometry")
@@ -353,7 +505,7 @@ def _route_to_payload(
         for node in explored_nodes
         if node in graph.nodes
     ]
-    return {
+    result = {
         "path": path_points,
         "explored_nodes": explored_coords,
         "distance_m": total_distance,
@@ -361,6 +513,13 @@ def _route_to_payload(
         "node_count": len(route_nodes),
         "instructions": _merge_instructions(instructions),
     }
+    if explored_backward is not None:
+        result["explored_nodes_backward"] = [
+            [float(graph.nodes[node]["y"]), float(graph.nodes[node]["x"])]
+            for node in explored_backward
+            if node in graph.nodes
+        ]
+    return result
 
 
 def _merge_instructions(instructions):
@@ -372,12 +531,22 @@ def _merge_instructions(instructions):
         action = step.get("action", "straight")
         street = step.get("street", "Đường không tên")
         distance_m = float(step.get("distance_m", 0.0))
+        turn_penalty_s = step.get("turn_penalty_s")
 
         if merged:
             previous = merged[-1]
             if previous["action"] == action and previous["street"] == street:
                 previous["distance_m"] = round(previous["distance_m"] + distance_m, 1)
                 continue
+
+        entry = {
+            "action": action,
+            "street": street,
+            "distance_m": round(distance_m, 1),
+        }
+        if turn_penalty_s is not None:
+            entry["turn_penalty_s"] = turn_penalty_s
+        merged.append(entry)
 
         merged.append(
             {
@@ -403,6 +572,123 @@ def _is_diverse_enough(candidate_nodes, accepted_routes):
     return True
 
 
+class DStarLite:
+    def __init__(self, graph, start, goal, heuristic, weight_func):
+        self.graph = graph
+        self.start = start
+        self.goal = goal
+        self.heuristic = heuristic
+        self.weight_func = weight_func
+        self.km = 0.0
+        self.g = {}
+        self.rhs = {}
+        self._queue = []
+        self._counter = count()
+        self.explored_order = []
+
+        self.rhs[goal] = 0.0
+        heappush(self._queue, (self._calc_key(goal), next(self._counter), goal))
+
+    def _g(self, s):
+        return self.g.get(s, float("inf"))
+
+    def _rhs(self, s):
+        return self.rhs.get(s, float("inf"))
+
+    def _calc_key(self, s):
+        min_val = min(self._g(s), self._rhs(s))
+        return (min_val + self.heuristic(self.start, s) + self.km, min_val)
+
+    def _update_vertex(self, u):
+        if u != self.goal:
+            min_rhs = float("inf")
+            for v in self.graph[u]:
+                c = self.weight_func(u, v)
+                if math.isfinite(c):
+                    min_rhs = min(min_rhs, c + self._g(v))
+            self.rhs[u] = min_rhs
+        if self._g(u) != self._rhs(u):
+            heappush(self._queue, (self._calc_key(u), next(self._counter), u))
+
+    def compute_shortest_path(self):
+        self.explored_order = []
+        expanded = set()
+        while self._queue:
+            k_old, _, u = heappop(self._queue)
+
+            if u in expanded:
+                continue
+
+            k_new = self._calc_key(u)
+            start_key = self._calc_key(self.start)
+
+            if k_old >= start_key and self._rhs(self.start) == self._g(self.start):
+                break
+
+            self.explored_order.append(u)
+            expanded.add(u)
+
+            if k_old < k_new:
+                heappush(self._queue, (k_new, next(self._counter), u))
+                expanded.discard(u)
+            elif self._g(u) > self._rhs(u):
+                self.g[u] = self.rhs[u]
+                for pred in self.graph.predecessors(u):
+                    self._update_vertex(pred)
+            else:
+                self.g[u] = float("inf")
+                self._update_vertex(u)
+                for pred in self.graph.predecessors(u):
+                    self._update_vertex(pred)
+
+        return self.explored_order
+
+    def extract_path(self):
+        path = [self.start]
+        current = self.start
+        visited = {current}
+        max_steps = len(self.graph.nodes) + 1
+        for _ in range(max_steps):
+            if current == self.goal:
+                return path
+            best_next = None
+            best_cost = float("inf")
+            for v in self.graph[current]:
+                c = self.weight_func(current, v)
+                if math.isfinite(c) and v not in visited:
+                    total = c + self._g(v)
+                    if total < best_cost:
+                        best_cost = total
+                        best_next = v
+            if best_next is None:
+                raise nx.NetworkXNoPath
+            path.append(best_next)
+            visited.add(best_next)
+            current = best_next
+        raise nx.NetworkXNoPath
+
+
+def _dstar_lite_find_path(graph, source, target, speed_ms, vehicle,
+                          jammed_nodes, flooded_nodes, node_penalties):
+    def weight_func(u, v):
+        _, best_weight, _ = _pick_best_edge_attrs(
+            graph, u, v, speed_ms, vehicle, jammed_nodes, flooded_nodes
+        )
+        if not math.isfinite(best_weight):
+            return best_weight
+        node_factor = max(node_penalties.get(u, 1.0), node_penalties.get(v, 1.0))
+        return best_weight * node_factor
+
+    dstar = DStarLite(
+        graph, source, target,
+        heuristic=lambda a, b: _heuristic_time(a, b, graph, speed_ms),
+        weight_func=weight_func,
+    )
+    explored = dstar.compute_shortest_path()
+    path = dstar.extract_path()
+    return path, explored
+
+
 def find_shortest_path(
     graph,
     start_coords,
@@ -413,6 +699,8 @@ def find_shortest_path(
     top_k=DEFAULT_TOP_K_ROUTES,
     traffic_level="Normal",
     rain_mm=0.0,
+    algorithm="astar",
+    turn_cost=False,
 ):
     try:
         start_lat, start_lon = _parse_point(start_coords)
@@ -477,15 +765,37 @@ def find_shortest_path(
         algo_start = multimodal_segments["car"][0] if multimodal_segments else start_node
         algo_end = multimodal_segments["car"][1] if multimodal_segments else end_node
 
+        if algorithm == "dstar_lite":
+            top_k = 1
+
         for _ in range(max_attempts):
+            explored_backward = None
             try:
-                route_nodes, explored_nodes = _astar_path_with_exploration(
-                    graph,
-                    algo_start,
-                    algo_end,
-                    heuristic=lambda u, v: _heuristic_time(u, v, graph, speed_ms),
-                    weight=weight_func,
-                )
+                if algorithm == "dstar_lite":
+                    route_nodes, explored_nodes = _dstar_lite_find_path(
+                        graph, algo_start, algo_end, speed_ms, vehicle,
+                        jammed_nodes, flooded_nodes, node_penalties,
+                    )
+                elif algorithm == "bidirectional":
+                    route_nodes, explored_nodes, explored_backward = (
+                        _bidirectional_astar_with_exploration(
+                            graph,
+                            algo_start,
+                            algo_end,
+                            heuristic=lambda u, v: _heuristic_time(u, v, graph, speed_ms),
+                            weight_forward=weight_func,
+                            weight_backward=weight_func,
+                        )
+                    )
+                else:
+                    route_nodes, explored_nodes = _astar_path_with_exploration(
+                        graph,
+                        algo_start,
+                        algo_end,
+                        heuristic=lambda u, v: _heuristic_time(u, v, graph, speed_ms),
+                        weight=weight_func,
+                        turn_cost_enabled=(turn_cost and algorithm == "astar"),
+                    )
             except nx.NetworkXNoPath:
                 break
 
@@ -515,14 +825,18 @@ def find_shortest_path(
                 )
                 route_payload = _route_to_payload(
                     graph, full_nodes, full_explored, speed_ms, vehicle,
-                    jammed_nodes, flooded_nodes, node_penalties
+                    jammed_nodes, flooded_nodes, node_penalties,
+                    explored_backward=explored_backward,
+                    turn_cost_enabled=turn_cost,
                 )
                 route_payload["segments"] = segments
                 route_payload["multimodal"] = True
             else:
                 route_payload = _route_to_payload(
                     graph, route_nodes, explored_nodes, speed_ms, vehicle,
-                    jammed_nodes, flooded_nodes, node_penalties
+                    jammed_nodes, flooded_nodes, node_penalties,
+                    explored_backward=explored_backward,
+                    turn_cost_enabled=turn_cost,
                 )
 
             route_payload["rank"] = len(route_payloads) + 1

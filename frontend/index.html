@@ -52,6 +52,15 @@
             </div>
 
             <div class="ctrl-row">
+                <span class="ctrl-icon">🧮</span>
+                <select id="algorithmType" onchange="onAlgorithmChange()">
+                    <option value="astar" selected>A* (Cơ bản)</option>
+                    <option value="bidirectional">A* Hai chiều</option>
+                    <option value="dstar_lite">D* Lite</option>
+                </select>
+            </div>
+
+            <div class="ctrl-row">
                 <span class="ctrl-icon">🚦</span>
                 <select id="trafficLevel" onchange="triggerRouteRecalc()">
                     <option value="Low">Tắc đường: Thấp (×1.2)</option>
@@ -106,6 +115,17 @@
                 </div>
                 <label class="md-switch">
                     <input id="animation-toggle-btn" type="checkbox" checked onchange="toggleAnimation()">
+                    <span class="md-track"><span class="md-thumb"></span></span>
+                </label>
+            </div>
+
+            <div class="ctrl-row ctrl-row--between">
+                <div class="ctrl-left">
+                    <span class="ctrl-icon">↩️</span>
+                    <span class="ctrl-text">Chi phí rẽ</span>
+                </div>
+                <label class="md-switch">
+                    <input id="turn-cost-toggle" type="checkbox" onchange="triggerRouteRecalc()">
                     <span class="md-track"><span class="md-thumb"></span></span>
                 </label>
             </div>

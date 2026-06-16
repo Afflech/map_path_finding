@@ -122,9 +122,12 @@ function instructionToText(step) {
     const action = (step?.action || "straight").toLowerCase();
     const street = step?.street || "đường không tên";
     const distanceLabel = formatDistanceMeters(step?.distance_m || 0);
-    if (action === "left") return `Rẽ trái vào ${street} - ${distanceLabel}`;
-    if (action === "right") return `Rẽ phải vào ${street} - ${distanceLabel}`;
-    return `Đi thẳng theo ${street} - ${distanceLabel}`;
+    let text;
+    if (action === "left") text = `Rẽ trái vào ${street} - ${distanceLabel}`;
+    else if (action === "right") text = `Rẽ phải vào ${street} - ${distanceLabel}`;
+    else text = `Đi thẳng theo ${street} - ${distanceLabel}`;
+    if (step?.turn_penalty_s) text += ` (+${step.turn_penalty_s}s)`;
+    return text;
 }
 
 function instructionIcon(action) {
@@ -310,7 +313,15 @@ function animateExploredNodes(exploredNodes, onComplete) {
 }
 
 function renderRouteWithAnimation(route, fitBounds = true) {
-    animateExploredNodes(route.explored_nodes || [], () => drawSelectedRoute(route, fitBounds));
+    if (route.explored_nodes_backward && route.explored_nodes_backward.length) {
+        animateExploredNodesBidirectional(
+            route.explored_nodes || [],
+            route.explored_nodes_backward,
+            () => drawSelectedRoute(route, fitBounds)
+        );
+    } else {
+        animateExploredNodes(route.explored_nodes || [], () => drawSelectedRoute(route, fitBounds));
+    }
 }
 
 function drawPath(pathData) {
@@ -454,17 +465,94 @@ function updateAnimationSpeed() {
     animationSpeed = selected;
 }
 
+function onAlgorithmChange() {
+    const algo = document.getElementById("algorithmType").value;
+    const turnCostToggle = document.getElementById("turn-cost-toggle");
+    const routeSel = document.getElementById("routeSelector");
+
+    if (turnCostToggle) {
+        turnCostToggle.disabled = algo !== "astar";
+        if (algo !== "astar") turnCostToggle.checked = false;
+    }
+
+    if (routeSel) {
+        const isDstar = algo === "dstar_lite";
+        for (let i = 1; i < routeSel.options.length; i++) {
+            routeSel.options[i].disabled = isDstar;
+        }
+        if (isDstar) routeSel.value = "0";
+    }
+
+    triggerRouteRecalc();
+}
+
+function animateExploredNodesBidirectional(forwardNodes, backwardNodes, onComplete) {
+    stopExplorationAnimation();
+    clearExploredMarkers();
+
+    if (!animationEnabled) {
+        onComplete();
+        return;
+    }
+
+    const fwd = Array.isArray(forwardNodes) ? forwardNodes : [];
+    const bwd = Array.isArray(backwardNodes) ? backwardNodes : [];
+    if (!fwd.length && !bwd.length) {
+        onComplete();
+        return;
+    }
+
+    let cursorF = 0;
+    let cursorB = 0;
+    const speed = ANIMATION_SPEED_PRESETS[animationSpeed] || ANIMATION_SPEED_PRESETS.normal;
+
+    exploredAnimationTimer = setInterval(() => {
+        for (let step = 0; step < speed.batchSize; step++) {
+            if (cursorF < fwd.length) {
+                const point = pointToLatLng(fwd[cursorF]);
+                cursorF++;
+                if (point && Number.isFinite(point[0]) && Number.isFinite(point[1])) {
+                    const marker = L.circleMarker(point, {
+                        radius: 4, color: "#4c6c91", fillColor: "#7aa2d8",
+                        fillOpacity: 0.5, opacity: 0.7, weight: 1.5, interactive: false,
+                    }).addTo(map);
+                    exploredNodeMarkers.push(marker);
+                }
+            }
+            if (cursorB < bwd.length) {
+                const point = pointToLatLng(bwd[cursorB]);
+                cursorB++;
+                if (point && Number.isFinite(point[0]) && Number.isFinite(point[1])) {
+                    const marker = L.circleMarker(point, {
+                        radius: 4, color: "#914c6c", fillColor: "#d87aab",
+                        fillOpacity: 0.5, opacity: 0.7, weight: 1.5, interactive: false,
+                    }).addTo(map);
+                    exploredNodeMarkers.push(marker);
+                }
+            }
+        }
+
+        if (cursorF >= fwd.length && cursorB >= bwd.length) {
+            stopExplorationAnimation();
+            onComplete();
+        }
+    }, speed.intervalMs);
+}
+
 function buildRequestPayload() {
     const start = toPoint(startMarker.getLatLng());
     const end = toPoint(endMarker.getLatLng());
+    const algorithm = document.getElementById("algorithmType").value;
 
     return {
         start,
         end,
         vehicle: document.getElementById("vehicleType").value,
-        top_k: TOP_K_ROUTES,
+        top_k: algorithm === "dstar_lite" ? 1 : TOP_K_ROUTES,
         traffic_level: document.getElementById("trafficLevel")?.value || "Normal",
         rain_mm: parseFloat(document.getElementById("rainMm")?.value || "0"),
+        algorithm,
+        turn_cost: document.getElementById("turn-cost-toggle")?.checked || false,
         obstacles: {
             jammed: jammedPoints,
             flooded: floodedPoints,
@@ -524,7 +612,9 @@ async function findShortestPath() {
 
         syncRouteSelectorOptions(currentRoutes.length);
         onRouteSelectionChange();
-        updateStatus(`Tìm đường thành công (${currentRoutes.length} tuyến).`, "success");
+        const algoNames = { astar: "A*", bidirectional: "A* Hai chiều", dstar_lite: "D* Lite" };
+        const algoLabel = algoNames[document.getElementById("algorithmType").value] || "A*";
+        updateStatus(`${algoLabel}: Tìm thành công (${currentRoutes.length} tuyến).`, "success");
     } catch (_error) {
         updateStatus("Lỗi kết nối backend.", "error");
     }
