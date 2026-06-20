@@ -88,10 +88,15 @@ const endText = document.getElementById("end-coords");
 const statusText = document.getElementById("status-text");
 const distanceText = document.getElementById("distance-info");
 const timeText = document.getElementById("time-info");
+const computeTimeText = document.getElementById("compute-time-info");
 const routeSelector = document.getElementById("routeSelector");
 const navigationStepsEl = document.getElementById("navigation-steps");
 const animationToggleBtn = document.getElementById("animation-toggle-btn");
 const animationSpeedSelect = document.getElementById("animationSpeed");
+const algoInfoText = document.getElementById("algo-info");
+const algoBadgeIcon = document.querySelector(".algo-icon");
+const resultSummary = document.getElementById("result-summary");
+const resultRouteTitle = document.getElementById("result-route-title");
 const vehicleTypeSelect = document.getElementById("vehicleType");
 
 const MIXED_MODE_TEMPLATE = {
@@ -552,7 +557,7 @@ function buildRequestPayload() {
         traffic_level: document.getElementById("trafficLevel")?.value || "Normal",
         rain_mm: parseFloat(document.getElementById("rainMm")?.value || "0"),
         algorithm,
-        turn_cost: document.getElementById("turn-cost-toggle")?.checked || false,
+        turn_cost: true,
         obstacles: {
             jammed: jammedPoints,
             flooded: floodedPoints,
@@ -610,10 +615,34 @@ async function findShortestPath() {
         const floodedEdges = data.flooded_edges || data.data?.flooded_edges || [];
         drawFloodedEdges(floodedEdges);
 
+        // Hiển thị thời gian thuật toán
+        const compTime = data.computation_time_ms;
+        if (compTime != null) {
+            computeTimeText.innerText = `${compTime} ms`;
+        } else {
+            computeTimeText.innerText = "— ms";
+        }
+
         syncRouteSelectorOptions(currentRoutes.length);
         onRouteSelectionChange();
-        const algoNames = { astar: "A*", bidirectional: "A* Hai chiều", dstar_lite: "D* Lite" };
-        const algoLabel = algoNames[document.getElementById("algorithmType").value] || "A*";
+
+        const algoNames = { astar: "A*", bidirectional: "Bi-A*", dstar_lite: "D* Lite" };
+        const algoBadges = { astar: "A*", bidirectional: "Bi", dstar_lite: "D*" };
+        const algoKey = document.getElementById("algorithmType").value;
+        const algoLabel = algoNames[algoKey] || "A*";
+
+        if (algoBadgeIcon) algoBadgeIcon.innerText = algoBadges[algoKey] || "A*";
+        if (algoInfoText) {
+            const timeStr = compTime != null ? `${compTime} ms` : "—";
+            algoInfoText.innerText = `${algoLabel} — Time to success: ${timeStr} (${currentRoutes.length} tuyến)`;
+        }
+        if (resultRouteTitle) resultRouteTitle.innerText = `Optimized Route (${algoLabel})`;
+        const trafficLabel = document.getElementById("trafficLevel")?.value || "Normal";
+        const rainVal = document.getElementById("rainMm")?.value || "0";
+        if (resultSummary) {
+            resultSummary.innerText = `Traffic: ${trafficLabel} · Rain: ${rainVal}mm · ${currentRoutes.length} tuyến tìm thấy.`;
+        }
+
         updateStatus(`${algoLabel}: Tìm thành công (${currentRoutes.length} tuyến).`, "success");
     } catch (_error) {
         updateStatus("Lỗi kết nối backend.", "error");
@@ -696,6 +725,11 @@ function resetMap() {
     endText.innerText = "Chưa chọn";
     distanceText.innerText = "0 km";
     timeText.innerText = "0 phút";
+    computeTimeText.innerText = "— ms";
+    if (algoInfoText) algoInfoText.innerText = "—";
+    if (algoBadgeIcon) algoBadgeIcon.innerText = "D*";
+    if (resultRouteTitle) resultRouteTitle.innerText = "Optimized Route";
+    if (resultSummary) resultSummary.innerText = "Chọn điểm đi và điểm đến trên bản đồ.";
     renderNavigationSteps([]);
     updateStatus("Đang chờ...", "idle");
 }

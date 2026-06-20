@@ -3,169 +3,192 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Pathfinding - Đống Đa Map</title>
+    <title>Đống Đa Navigator – AI Pathfinding</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
     <div id="map"></div>
 
-    <!-- Floating Control Card – top-left -->
+    <!-- ══════════ Control Panel – top-left ══════════ -->
     <div id="control-card">
+
+        <!-- Header / Brand -->
         <div class="card-header">
-            <div class="logo-row">
-                <span class="logo-icon">🗺️</span>
-                <span class="logo-text"> Công cụ tìm đường thông minh</span>
-            </div>
-            <button class="icon-btn" onclick="resetMap()" title="Làm mới bản đồ">↺</button>
-        </div>
-
-        <!-- Origin / Destination fields -->
-        <div class="coord-fields">
-            <div class="coord-row">
-                <span class="coord-dot dot-green"></span>
-                <div class="coord-input-wrap">
-                    <span class="coord-label">Điểm đi</span>
-                    <span class="coord-value" id="start-coords">Chưa chọn</span>
+            <div class="brand">
+                <div class="brand-shield">
+                    <svg width="28" height="32" viewBox="0 0 28 32" fill="none">
+                        <path d="M14 0L0 6V16C0 24.4 6 30.4 14 32C22 30.4 28 24.4 28 16V6L14 0Z" fill="#1e3a5f"/>
+                        <path d="M10 16L7 13L5.6 14.4L10 18.8L20 8.8L18.6 7.4L10 16Z" fill="#fff"/>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-name">ĐỐNG ĐA</span>
+                    <span class="brand-sub">NAVIGATOR</span>
                 </div>
             </div>
-            <div class="coord-divider"></div>
-            <div class="coord-row">
-                <span class="coord-dot dot-red"></span>
-                <div class="coord-input-wrap">
-                    <span class="coord-label">Điểm đến</span>
-                    <span class="coord-value" id="end-coords">Chưa chọn</span>
+            <button class="btn-reset" onclick="resetMap()" title="Làm mới bản đồ">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M13.65 2.35A7.96 7.96 0 008 0C3.58 0 .01 3.58.01 8S3.58 16 8 16c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 018 14 6 6 0 012 8a6 6 0 016-6c1.66 0 3.14.69 4.22 1.78L9 7h7V0l-2.35 2.35z"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Start / End Points -->
+        <div class="section">
+            <div class="point-row">
+                <span class="point-marker marker-start">A</span>
+                <div class="point-info">
+                    <span class="point-label">Start Point (A)</span>
+                    <span class="point-value" id="start-coords">Click bản đồ để chọn</span>
+                </div>
+            </div>
+            <div class="point-swap">⇅</div>
+            <div class="point-row">
+                <span class="point-marker marker-end">B</span>
+                <div class="point-info">
+                    <span class="point-label">Destination (B)</span>
+                    <span class="point-value" id="end-coords">Click bản đồ để chọn</span>
                 </div>
             </div>
         </div>
 
-        <!-- Controls -->
-        <div class="controls-section">
-            <div class="ctrl-row">
-                <span class="ctrl-icon">🚗</span>
-                <select id="vehicleType" onchange="triggerRouteRecalc()">
-                    <option value="walk">Đi bộ (5 km/h)</option>
-                    <option value="bike" selected>Xe máy (25 km/h)</option>
-                    <option value="car">Ô tô (35 km/h)</option>
+        <!-- Vehicle Selector -->
+        <div class="section">
+            <div class="section-title">Vehicle</div>
+            <div class="vehicle-group">
+                <button class="vehicle-btn" data-vehicle="bike" title="Xe máy (25 km/h)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19 7c0-1.1-.9-2-2-2h-3l-1.4-1.4A2 2 0 0011.17 3H8v2h3.17l1 1H11l-4 4 1.5 1.5L11 9h1.17l1.24 3.29A5 5 0 005 17a5 5 0 005 5 5 5 0 004.78-3.52L16.63 14H19v-2h-3.29l-.52-1.37A5 5 0 0019 16a5 5 0 005-5h-2a3 3 0 01-3 3 3 3 0 01-3-3 3 3 0 013-3V7zM10 20a3 3 0 01-3-3 3 3 0 013-3c.18 0 .35.03.52.07L9.13 17.3A1 1 0 0010 18.6l.4-.1A3 3 0 0110 20z"/></svg>
+                    <span>Motorcycle</span>
+                </button>
+                <button class="vehicle-btn" data-vehicle="car" title="Ô tô (35 km/h)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm11 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3zM5 11l1.5-4.5h11L19 11H5z"/></svg>
+                    <span>Car</span>
+                </button>
+                <button class="vehicle-btn" data-vehicle="walk" title="Đi bộ (5 km/h)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6a2.145 2.145 0 00-2.65-.84L7 8v5h2V9.6l.8-.7z"/></svg>
+                    <span>Walk</span>
+                </button>
+            </div>
+            <!-- Hidden select synced with buttons -->
+            <select id="vehicleType" class="hidden-select" onchange="triggerRouteRecalc()">
+                <option value="walk">Đi bộ (5 km/h)</option>
+                <option value="bike" selected>Xe máy (25 km/h)</option>
+                <option value="car">Ô tô (35 km/h)</option>
+            </select>
+        </div>
+
+        <!-- Route Options -->
+        <div class="section">
+            <div class="section-title">Route Options</div>
+
+            <div class="option-row">
+                <label class="option-label" for="trafficLevel">Traffic Level</label>
+                <select id="trafficLevel" class="option-select" onchange="triggerRouteRecalc()">
+                    <option value="Low">Low (×1.2)</option>
+                    <option value="Normal" selected>Normal (×1.5)</option>
+                    <option value="High">High (×2.0)</option>
                 </select>
             </div>
 
-            <div class="ctrl-row">
-                <span class="ctrl-icon">🧮</span>
-                <select id="algorithmType" onchange="onAlgorithmChange()">
+            <div class="option-row">
+                <label class="option-label" for="algorithmType">Algorithm</label>
+                <select id="algorithmType" class="option-select" onchange="onAlgorithmChange()">
                     <option value="astar" selected>A* (Cơ bản)</option>
                     <option value="bidirectional">A* Hai chiều</option>
                     <option value="dstar_lite">D* Lite</option>
                 </select>
             </div>
 
-            <div class="ctrl-row">
-                <span class="ctrl-icon">🚦</span>
-                <select id="trafficLevel" onchange="triggerRouteRecalc()">
-                    <option value="Low">Tắc đường: Thấp (×1.2)</option>
-                    <option value="Normal" selected>Tắc đường: Bình thường (×1.5)</option>
-                    <option value="High">Tắc đường: Cao (×2.0)</option>
-                </select>
-            </div>
-
-            <div class="ctrl-row">
-                <span class="ctrl-icon">🌧️</span>
-                <div style="display:flex;align-items:center;gap:6px;flex:1">
+            <div class="option-row">
+                <label class="option-label">Weather</label>
+                <div class="weather-control">
+                    <span class="weather-icon" id="weatherIcon">☀️</span>
                     <input id="rainMm" type="range" min="0" max="100" step="5" value="0"
-                        oninput="document.getElementById('rainMmVal').innerText=this.value+'mm';triggerRouteRecalc()"
-                        style="flex:1">
-                    <span id="rainMmVal" style="min-width:40px;font-size:12px">0mm</span>
+                        oninput="updateWeatherDisplay(this.value);triggerRouteRecalc()"
+                        class="rain-slider">
+                    <span id="rainMmVal" class="rain-value">0mm</span>
                 </div>
             </div>
 
-            <div class="ctrl-row">
-                <span class="ctrl-icon">📍</span>
-                <select id="clickMode">
-                    <option value="route" selected>Chọn Điểm Đi/Đến</option>
+            <div class="option-row">
+                <label class="option-label" for="clickMode">Click Mode</label>
+                <select id="clickMode" class="option-select">
+                    <option value="route" selected>Chọn Điểm</option>
                     <option value="jammed">Đánh dấu Tắc đường</option>
                     <option value="flooded">Đánh dấu Ngập lụt</option>
                 </select>
             </div>
+        </div>
 
-            <div class="ctrl-row">
-                <span class="ctrl-icon">🛣️</span>
-                <select id="routeSelector" onchange="onRouteSelectionChange()">
-                    <option value="0" selected>Tuyến 1</option>
-                    <option value="1">Tuyến 2</option>
-                    <option value="2">Tuyến 3</option>
-                </select>
-            </div>
-
-            <div class="ctrl-row ctrl-row--between">
-                <div class="ctrl-left">
-                    <span class="ctrl-icon">🌊</span>
-                    <span class="ctrl-text">Hiển thị ngập lụt</span>
-                </div>
-                <label class="md-switch">
-                    <input id="flood-layer-toggle" type="checkbox" checked onchange="toggleFloodLayer()">
-                    <span class="md-track"><span class="md-thumb"></span></span>
-                </label>
-            </div>
-
-            <div class="ctrl-row ctrl-row--between">
-                <div class="ctrl-left">
-                    <span class="ctrl-icon">▶</span>
-                    <span class="ctrl-text">Animation</span>
-                </div>
-                <label class="md-switch">
-                    <input id="animation-toggle-btn" type="checkbox" checked onchange="toggleAnimation()">
-                    <span class="md-track"><span class="md-thumb"></span></span>
-                </label>
-            </div>
-
-            <div class="ctrl-row ctrl-row--between">
-                <div class="ctrl-left">
-                    <span class="ctrl-icon">↩️</span>
-                    <span class="ctrl-text">Chi phí rẽ</span>
-                </div>
-                <label class="md-switch">
-                    <input id="turn-cost-toggle" type="checkbox" onchange="triggerRouteRecalc()">
-                    <span class="md-track"><span class="md-thumb"></span></span>
-                </label>
-            </div>
-
-            <div class="ctrl-row">
-                <span class="ctrl-icon">⚡</span>
-                <select id="animationSpeed" onchange="updateAnimationSpeed()">
-                    <option value="fast">Nhanh</option>
-                    <option value="normal" selected>Vừa</option>
-                    <option value="slow">Chậm</option>
-                </select>
-            </div>
+        <!-- Calculate Button -->
+        <div class="section section-btn">
+            <button id="calc-btn" class="btn-calculate" onclick="triggerRouteRecalc()">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="margin-right:6px">
+                    <path d="M8 0L0 4v5.3c0 4.7 3.4 9 8 10.7 4.6-1.7 8-6 8-10.7V4L8 0zm0 2.2L13 5v4.3c0 3.5-2.3 6.7-5 8.2-2.7-1.5-5-4.7-5-8.2V5l5-2.8z"/>
+                </svg>
+                Calculate Route
+            </button>
         </div>
 
         <!-- Nav steps accordion -->
         <details class="nav-accordion">
-            <summary>Chi tiết lộ trình</summary>
+            <summary>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" style="margin-right:4px"><path d="M7 0C3.13 0 0 3.13 0 7s3.13 7 7 7 7-3.13 7-7S10.87 0 7 0zm.7 10.5H6.3v-4.2h1.4v4.2zm0-5.6H6.3V3.5h1.4v1.4z"/></svg>
+                Chi tiết lộ trình
+            </summary>
             <div id="navigation-steps" class="navigation-steps">
                 <p class="nav-placeholder">Chưa có chỉ dẫn điều hướng.</p>
             </div>
         </details>
     </div>
 
-    <!-- Floating Result Card – bottom-left -->
+    <!-- ══════════ Result Card – bottom-center ══════════ -->
     <div id="result-card">
-        <div class="result-row">
-            <span class="result-icon">📏</span>
-            <div>
-                <div class="result-label">Quãng đường</div>
-                <div class="result-value" id="distance-info">0 km</div>
+        <div class="result-header">
+            <span class="result-title" id="result-route-title">Optimized Route</span>
+            <select id="routeSelector" class="route-select" onchange="onRouteSelectionChange()">
+                <option value="0" selected>Tuyến 1</option>
+                <option value="1">Tuyến 2</option>
+                <option value="2">Tuyến 3</option>
+            </select>
+        </div>
+
+        <div class="result-metrics">
+            <div class="metric">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="#1e3a5f"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z"/></svg>
+                <div>
+                    <div class="metric-label">Distance</div>
+                    <div class="metric-value" id="distance-info">0 km</div>
+                </div>
+            </div>
+            <div class="metric-sep"></div>
+            <div class="metric">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="#1e3a5f"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
+                <div>
+                    <div class="metric-label">Est. Time</div>
+                    <div class="metric-value" id="time-info">0 phút</div>
+                </div>
             </div>
         </div>
-        <div class="result-divider"></div>
-        <div class="result-row">
-            <span class="result-icon">⏱</span>
-            <div>
-                <div class="result-label">Thời gian</div>
-                <div class="result-value" id="time-info">0 phút</div>
+
+        <div class="result-summary" id="result-summary">Chọn điểm đi và điểm đến trên bản đồ.</div>
+
+        <div class="result-algo">
+            <div class="algo-badge">
+                <span class="algo-icon">D*</span>
+            </div>
+            <div class="algo-detail">
+                <span class="algo-title">Algorithm Detail</span>
+                <span class="algo-value" id="algo-info">—</span>
+            </div>
+            <div class="algo-time">
+                <span class="algo-time-value" id="compute-time-info">— ms</span>
             </div>
         </div>
+
         <div class="result-status">
             <span id="status-text" class="idle">Đang chờ...</span>
         </div>
@@ -173,5 +196,27 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="js/map_logic.js"></script>
+    <script>
+        // Vehicle button interaction
+        document.querySelectorAll('.vehicle-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.vehicle-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const v = btn.dataset.vehicle;
+                document.getElementById('vehicleType').value = v;
+                document.getElementById('vehicleType').dispatchEvent(new Event('change'));
+            });
+        });
+        // Set initial active
+        document.querySelector('.vehicle-btn[data-vehicle="bike"]').classList.add('active');
+
+        // Weather icon update
+        function updateWeatherDisplay(val) {
+            const v = parseInt(val);
+            document.getElementById('rainMmVal').innerText = v + 'mm';
+            const icon = v === 0 ? '☀️' : v <= 30 ? '🌤️' : v <= 60 ? '🌧️' : '⛈️';
+            document.getElementById('weatherIcon').innerText = icon;
+        }
+    </script>
 </body>
 </html>

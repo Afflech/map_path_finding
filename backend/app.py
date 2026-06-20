@@ -1,3 +1,5 @@
+import time
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from solver import load_graph, find_shortest_path
@@ -53,13 +55,16 @@ def api_find_path():
     if not isinstance(turn_cost, bool):
         turn_cost = str(turn_cost).lower() in ('true', '1', 'yes')
 
+    t_start = time.perf_counter()
     result = find_shortest_path(
         map_graph, start_coords, end_coords, vehicle, jammed, flooded, top_k,
         traffic_level=traffic_level, rain_mm=rain_mm,
         algorithm=algorithm, turn_cost=turn_cost,
     )
+    t_end = time.perf_counter()
 
     if result.get("status") == "success":
+        result["computation_time_ms"] = round((t_end - t_start) * 1000, 1)
         return jsonify(result), 200
     return jsonify(result), 404
 
