@@ -1,287 +1,281 @@
-# Ứng dụng AI trong Định tuyến Giao thông Khu vực Quận Đống Đa, Hà Nội
+# AI Pathfinding cho bản đồ Đống Đa, Hà Nội
 
-Dự án này là một hệ thống **định tuyến giao thông thông minh** được thiết kế riêng cho mạng lưới đường phố thuộc quận **Đống Đa, Hà Nội**. Chương trình sử dụng các thuật toán Tìm kiếm có Thông tin (Informed Search) trong Trí tuệ Nhân tạo để tìm kiếm lộ trình tối ưu dựa trên thời gian di chuyển thực tế dưới sự ảnh hưởng của các yếu tố động như ùn tắc giao thông và ngập lụt.
+Ứng dụng web mô phỏng tìm đường trên mạng lưới đường phố quận Đống Đa. Frontend dùng Leaflet để chọn điểm đi/đến, thiết lập phương tiện và điều kiện mô phỏng; backend dùng đồ thị OpenStreetMap lưu cục bộ để tính nhiều tuyến đường theo thời gian di chuyển.
 
-Hệ thống được thiết kế chạy hoàn toàn trên **Localhost**, kết nối trực tiếp đến dữ liệu đồ thị đường phố thực tế từ nguồn **OpenStreetMap (OSM)** mà không cần phụ thuộc vào bất kỳ dịch vụ API tính phí bên ngoài nào.
+Giao diện hiện tại được tổ chức theo kiểu dashboard:
 
----
+- Sidebar bên trái để chọn điểm, thuật toán, phương tiện, tắc đường, lớp ngập và các tuyến thay thế.
+- Thẻ kết quả ở đáy giữa để xem quãng đường, thời gian và trạng thái xử lý.
+- Thẻ chú giải riêng ở góc phải để đọc nhanh các lớp bản đồ.
 
-## Mục lục
+Dự án chạy local, không phụ thuộc API định tuyến trả phí. Dữ liệu bản đồ được chuẩn bị một lần bằng OSMnx và lưu tại `backend/data/map_dong_da.graphml`.
 
-1. [Cấu trúc Thư mục & Mã nguồn](#1-cấu-trúc-thư-mục--mã-nguồn)
-2. [Mô hình hóa Không gian Trạng thái (State Space)](#2-mô-hình-hóa-không-gian-trạng-thái-state-space)
-3. [Các Giải thuật & Cơ chế Cốt lõi](#3-các-giải-thuật--cơ-chế-cốt-lõi)
-   - [Thuật toán A* & Hàm Đánh giá](#thuật-toán-a--hàm-đánh-giá)
-   - [Định tuyến Top-K Lộ trình đa dạng (Diverse Routes)](#định-tuyến-top-k-lộ-trình-đa-dạng-diverse-routes)
-   - [Định tuyến đa phương thức & Nhận diện Ngõ nhỏ (Multi-modal & Alley Detection)](#định-tuyến-đa-phương-thức--nhận-diện-ngõ-nhỏ-multi-modal--alley-detection)
-   - [Mô phỏng Giao thông động (Traffic Simulation)](#mô-phỏng-giao-thông-động-traffic-simulation)
-   - [Mô phỏng và Tránh Ngập lụt (Flood Avoidance)](#mô-phỏng-và-tránh-ngập-lụt-flood-avoidance)
-4. [Công nghệ Sử dụng](#4-công-nghệ-sử-dụng)
-5. [Hướng dẫn Cài đặt & Vận hành](#5-hướng-dẫn-cài-đặt--vận-hành)
-   - [Yêu cầu hệ thống](#yêu-cầu-hệ-thống)
-   - [Cách 1: Cài đặt thủ công](#cách-1-cài-đặt-thủ-công)
-   - [Cách 2: Chạy bằng Docker](#cách-2-chạy-bằng-docker)
-6. [API Documentation](#6-api-documentation)
+## Tính năng chính
 
----
+- Tìm đường bằng 3 thuật toán: A*, Bidirectional A* và D* Lite.
+- Trả về tối đa 3 tuyến thay thế cho A* và Bidirectional A*.
+- Mô hình chi phí theo phương tiện: đi bộ, xe máy, ô tô.
+- Mô phỏng tắc đường theo mức `Low`, `Normal`, `High`.
+- Mô phỏng ngập theo lượng mưa và số làn đường.
+- Hỗ trợ đánh dấu điểm tắc/ngập thủ công trên bản đồ.
+- Có animation cho các node đã mở rộng; Bidirectional A* hiển thị cả hai hướng.
+- Tự sinh chỉ dẫn theo từng đoạn đường.
+- Khi ô tô không đi được vào ngõ, backend ghép route đi bộ + ô tô + đi bộ.
 
-## 1. Cấu trúc Thư mục & Mã nguồn
-
-Dự án được phân chia rõ ràng thành hai phần chính: **Backend** (xử lý logic tìm đường bằng Python) và **Frontend** (giao diện người dùng web tương tác).
+## Kiến trúc dự án
 
 ```text
 map_finding_path/
 ├── backend/
 │   ├── data/
-│   │   └── map_dong_da.graphml      # File đồ thị đường phố đã được biên dịch lưu cục bộ
-│   ├── cache/                       # Cache kết quả truy vấn địa lý
-│   ├── app.py                       # Flask API Server nhận và trả về dữ liệu định tuyến
-│   ├── prepare_data.py              # Script tải, xây dựng và lưu đồ thị địa lý từ OSMnx
-│   ├── solver.py                    # Nhân tính toán định tuyến (A*, Top-K, Multi-modal, Trọng số)
-│   ├── requirements.txt             # Danh sách thư viện Python cần thiết
-│   └── Dockerfile                   # Cấu hình container hóa cho backend
+│   │   └── map_dong_da.graphml      # Đồ thị đường phố Đống Đa đã lưu cục bộ
+│   ├── app.py                       # Flask API server
+│   ├── prepare_data.py              # Tải và lưu dữ liệu bản đồ từ OpenStreetMap
+│   ├── solver.py                    # Logic định tuyến và mô hình chi phí
+│   ├── requirements.txt             # Dependency Python
+│   └── Dockerfile
 ├── frontend/
-│   ├── css/
-│   │   └── style.css                # Định dạng giao diện Web, hiệu ứng và các bảng điều khiển
-│   ├── js/
-│   │   └── map_logic.js             # Điều khiển bản đồ Leaflet, tương tác chuột, vẽ các chặng và animation
-│   ├── index.html                   # Giao diện hiển thị bản đồ trực quan
-│   └── Dockerfile                   # Cấu hình container hóa cho frontend (Nginx)
-├── docker-compose.yml               # Quản lý chạy ứng dụng đa container
-└── README.md                        # Tài liệu hướng dẫn sử dụng (File này)
+│   ├── css/style.css                # Giao diện dashboard và bản đồ
+│   ├── js/map_logic.js              # Logic Leaflet, gọi API, vẽ route/animation
+│   ├── index.html                   # Bố cục dashboard
+│   └── Dockerfile
+├── docker-compose.yml
+└── README.md
 ```
 
----
+## Luồng xử lý
 
-## 2. Mô hình hóa Không gian Trạng thái (State Space)
+1. Người dùng click lên bản đồ để chọn điểm đi và điểm đến.
+2. Frontend lấy các tham số: phương tiện, thuật toán, mức tắc đường và các điểm cản trở thủ công; lượng mưa và chi phí rẽ hiện được giữ cố định trong giao diện.
+3. Frontend gửi request `POST /api/find-path` đến backend.
+4. Backend nạp đồ thị, áp điều kiện động lên cạnh, sau đó chạy thuật toán được chọn.
+5. Backend trả về route chính, các route thay thế, node đã mở rộng, chỉ dẫn từng đoạn và các cạnh bị ngập.
+6. Frontend hiển thị route, animation, chỉ dẫn và thẻ kết quả.
 
-Để giải quyết bài toán tìm đường bằng thuật toán AI, mạng lưới giao thông quận Đống Đa được hình thức hóa thành không gian trạng thái như sau:
+## Mô hình đồ thị
 
-| Thành phần | Định nghĩa toán học & Thực tiễn trong Dự án |
-|---|---|
-| **Môi trường** | Một đồ thị có hướng đa cạnh $G = (V, E)$. Mỗi nút $v \in V$ đại diện cho một ngã rẽ hoặc điểm tọa độ địa lý. Mỗi cạnh có hướng $e \in E$ nối giữa hai nút đại diện cho một làn/đoạn đường một chiều. Đồ thị được lưu trong file `backend/data/map_dong_da.graphml`. |
-| **Trạng thái ($S$)** | Một nút $v \in V$, được đặc trưng bởi tọa độ địa lý $(\text{vĩ độ}, \text{kinh độ}) = (\text{lat}, \text{lng})$. |
-| **Trạng thái bắt đầu ($S_0$)** | Nút $v_{start} \in V$ gần nhất với tọa độ nhấp chuột chọn điểm xuất phát của người dùng trên bản đồ. |
-| **Trạng thái đích ($S_g$)** | Nút $v_{goal} \in V$ gần nhất với tọa độ điểm đến mong muốn của người dùng. |
-| **Hành động ($A$)** | Di chuyển từ nút hiện tại $u$ sang nút liền kề $v$ thông qua cạnh $e(u, v) \in E$. Hành động này bị ràng buộc bởi loại phương tiện (ví dụ: ô tô không đi vào ngõ) và trạng thái ngập lụt (đường ngập không thể đi qua). |
-| **Hàm chuyển trạng thái ($Result$)** | $Result(u, \text{đi qua cạnh } e(u,v)) = v$. |
-| **Chi phí đường đi ($Path\ Cost$)** | **Thời gian di chuyển tích lũy** (tính bằng giây). Chi phí của một cạnh $e(u, v)$ được tính bằng công thức: $T = \frac{\text{Độ dài thực tế } (m)}{\text{Vận tốc hiệu dụng } (m/s)}$. Vận tốc hiệu dụng phụ thuộc vào loại phương tiện, mức độ tắc đường và mưa ngập trên đoạn đường đó. |
+Mạng đường được biểu diễn bằng `networkx.MultiDiGraph`:
 
----
+- Node là nút giao hoặc điểm tọa độ trên đường.
+- Edge là đoạn đường có hướng, chứa chiều dài, loại đường, số làn và metadata từ OpenStreetMap.
+- Điểm start/end của người dùng sẽ được map sang node gần nhất bằng `ox.distance.nearest_nodes`.
 
-## 3. Các Giải thuật & Cơ chế Cốt lõi
+Chi phí tìm đường trong backend chủ yếu là thời gian di chuyển:
 
-Hệ thống định vị thông minh này không chỉ tìm đường đơn thuần mà còn tích hợp các cơ chế mô phỏng phức tạp để mô tả đúng điều kiện giao thông tại Việt Nam:
-
-### Thuật toán A* & Hàm Đánh giá
-Giải thuật tìm đường cốt lõi là **A\*** với hàm đánh giá:
-$$f(n) = g(n) + h(n)$$
-*   **$g(n)$**: Chi phí thời gian thực tế đã tích lũy từ điểm xuất phát đến nút $n$.
-*   **$h(n)$**: Hàm heuristic ước lượng thời gian đi từ $n$ tới đích. Heuristic này được tính bằng **khoảng cách Haversine** (đường chim bay trên bề mặt Trái Đất) chia cho vận tốc lớn nhất có thể của phương tiện đang sử dụng:
-    $$h(n) = \frac{d_{\text{Haversine}}(n, \text{goal})}{v_{\text{max}}}$$
-    Do khoảng cách đường chim bay luôn nhỏ hơn hoặc bằng quãng đường đi thực tế, hàm heuristic này luôn **admissible** (chấp nhận được - không bao giờ đánh giá cao hơn chi phí thực tế) và **consistent** (nhất quán), đảm bảo thuật toán A\* tìm ra **đường đi tối ưu tuyệt đối về thời gian**.
-
-### Định tuyến Top-K Lộ trình đa dạng (Diverse Routes)
-Để cung cấp cho người dùng 3 tuyến đường lựa chọn (Tuyến 1, Tuyến 2, Tuyến 3):
-1.  Hệ thống chạy A\* lần đầu để tìm tuyến đường tối ưu nhất.
-2.  Để tìm tuyến thứ 2 và thứ 3 có độ đa dạng cao (tránh trùng lặp đường cũ quá nhiều):
-    *   Hệ thống kiểm tra mức độ trùng lặp giữa lộ trình ứng viên với các lộ trình đã được duyệt nhận dạng thông qua chỉ số:
-        $$\text{Trùng lặp} = \frac{|V_{\text{ứng viên}} \cap V_{\text{đã nhận}}|}{|V_{\text{ứng viên}}|}$$
-    *   Nếu tỷ lệ không trùng lặp (divergence) nhỏ hơn **$8\%$** (`MIN_ROUTE_DIVERGENCE_RATIO` = 0.08, tức trùng lặp quá 92%), lộ trình ứng viên sẽ bị loại bỏ.
-    *   Khi xảy ra trùng lặp hoặc khi muốn khám phá lộ trình mới, các nút trên lộ trình cũ sẽ bị phạt trọng số thời gian bằng cách nhân thêm một hệ số ngẫu nhiên từ **$1.10$ đến $1.45$** (`RANDOM_NODE_PENALTY_MIN` và `RANDOM_NODE_PENALTY_MAX`).
-    *   Thuật toán A\* được chạy lại trên đồ thị đã bị phạt trọng số để ép tìm đường đi tránh các nút của tuyến trước đó.
-
-### Định tuyến đa phương thức & Nhận diện Ngõ nhỏ (Multi-modal & Alley Detection)
-Một điểm đặc trưng của đô thị Hà Nội là hệ thống ngõ nhỏ. Nếu người dùng chọn đi bằng **Ô tô** nhưng điểm xuất phát hoặc điểm kết thúc nằm trong ngõ hẻm (`living_street`, `service`, `pedestrian`, `footway`, `path`):
-1.  Hệ thống sẽ tự động nhận diện các điểm này nằm trong khu vực ô tô không thể vào được (`_node_is_in_alley`).
-2.  Hệ thống chạy thuật toán loang BFS từ ngõ ra ngoài để tìm nút giao lộ gần nhất có đường lớn ô tô đi được (`_find_nearest_car_node`).
-3.  Lộ trình được chia làm **3 chặng**:
-    *   **Chặng 1 (Đi bộ - nét đứt xanh lá):** Từ điểm xuất phát trong ngõ đi bộ ra điểm kết nối đường lớn.
-    *   **Chặng 2 (Ô tô - nét liền xanh dương):** Di chuyển bằng ô tô trên hệ thống đường lớn liên kết.
-    *   **Chặng 3 (Đi bộ - nét đứt xanh lá):** Từ điểm đỗ xe ở đường lớn đi bộ vào đích nằm trong ngõ nhỏ.
-
-### Mô phỏng Giao thông động (Traffic Simulation)
-Trước mỗi phiên tìm kiếm đường đi, backend sẽ áp dụng ngẫu nhiên một trạng thái ùn tắc giao thông giả lập trên khoảng $30\%$ số cạnh (hoặc $100\%$ nếu mức tắc đường là Cao) thông qua hàm `apply_mock_conditions` trong `solver.py`:
-*   **Vắng vẻ (Low):** Nhân chiều dài cạnh với hệ số phạt $1.2$.
-*   **Bình thường (Normal):** Nhân chiều dài cạnh với hệ số phạt $1.5$.
-*   **Đông đúc (High):** Nhân chiều dài cạnh với hệ số phạt $2.0$.
-
-### Mô phỏng và Tránh Ngập lụt (Flood Avoidance)
-Hệ thống sử dụng lượng mưa đo bằng milimét (người dùng kéo trên thanh trượt từ $0\text{mm}$ đến $100\text{mm}$) và số làn đường (`lanes`) có sẵn trong metadata của cạnh để xác định xem một đoạn đường có bị ngập hay không.
-*   **Công thức tính công suất thoát nước của đường:**
-    $$C = \text{lanes} \times 3 \text{ (mét)} \times 15 \text{ (mm/h)}$$
-*   **Nếu lượng mưa $\text{rain\_mm} > C$**: Đường bị coi là **Ngập lụt**.
-*   **Quy tắc điều hướng khi ngập lụt:**
-    *   **Người đi bộ (`walk`) & Ô tô (`car`):** Bị cấm hoàn toàn qua đoạn đường ngập (trọng số thời gian trở thành vô cùng lớn $\infty$).
-    *   **Xe máy (`bike`):** Vẫn có thể lội nước nhưng bị phạt thời gian di chuyển gấp **$20$ lần** bình thường (`FLOODED_BIKE_PENALTY_FACTOR` = 20.0).
-
----
-
-## 4. Công nghệ Sử dụng
-
-| Tầng công nghệ | Các thư viện & Công cụ chi tiết |
-|---|---|
-| **Backend** | **Python 3.9+** làm ngôn ngữ chính. **OSMnx** trích xuất và chuẩn hóa đồ thị giao thông từ OpenStreetMap. **NetworkX** quản lý cấu trúc dữ liệu đồ thị có hướng đa cạnh (`MultiDiGraph`). **Flask & Flask-CORS** tạo REST API giao tiếp dữ liệu JSON giữa Backend và Frontend. |
-| **Frontend** | **HTML5, CSS3** thiết kế giao diện phẳng dạng thẻ (card) nổi hiện đại, hỗ trợ hiệu ứng bóng mờ và nút switch phong cách Material Design. **Vanilla JavaScript (ES6)** xử lý logic sự kiện, tương tác bản đồ, gọi fetch API không đồng bộ. |
-| **Bản đồ trực quan** | **Leaflet.js** bản đồ nền tương tác mã nguồn mở gọn nhẹ. **OpenStreetMap Tiles** cung cấp các mảnh bản đồ nền hình ảnh. **Nominatim API** truy vấn ranh giới hành chính Quận Đống Đa để vẽ viền đa giác bao quanh quận. |
-| **Container hóa** | **Docker & Docker Compose** đóng gói backend (Python) và frontend (Nginx) thành các container độc lập, triển khai bằng một lệnh duy nhất. |
-
----
-
-## 5. Hướng dẫn Cài đặt & Vận hành
-
-### Yêu cầu hệ thống
-*   **Python 3.9** trở lên (nếu cài thủ công).
-*   **Docker & Docker Compose** (nếu dùng phương án container).
-*   Một trình duyệt web hiện đại (Chrome, Edge, Firefox, Safari).
-
-### Cách 1: Cài đặt thủ công
-
-#### Bước 1: Chuẩn bị mã nguồn
-Tải dự án về máy và di chuyển vào thư mục dự án:
-```bash
-git clone https://github.com/<your-username>/map_finding_path.git
-cd map_finding_path
+```text
+travel_time = effective_length_or_cost / vehicle_speed
 ```
 
-#### Bước 2: Khởi tạo Môi trường ảo Python
-```bash
-python -m venv backend/venv
+Trong đó `effective_length_or_cost` có thể bị thay đổi bởi:
 
-# Kích hoạt môi trường ảo:
-# Trên Windows (PowerShell/CMD):
-backend\venv\Scripts\activate
+- Tắc đường.
+- Ngập lụt.
+- Điểm cản trở thủ công.
+- Penalty trên node để tạo route thay thế.
+- Chi phí rẽ khi bật `turn_cost`.
 
-# Trên Linux/macOS:
-source backend/venv/bin/activate
+Tốc độ mặc định:
+
+| Phương tiện | API | Tốc độ |
+|---|---:|---:|
+| Đi bộ | `walk` | 5 km/h |
+| Xe máy | `bike` | 25 km/h |
+| Ô tô | `car` | 35 km/h |
+
+## Thuật toán định tuyến
+
+### A*
+
+Chế độ `astar` là mặc định. Backend dùng công thức:
+
+```text
+f(n) = g(n) + h(n)
 ```
 
-#### Bước 3: Cài đặt các thư viện phụ thuộc
-```bash
-pip install -r backend/requirements.txt
+- `g(n)`: thời gian đã đi từ điểm xuất phát đến node `n`.
+- `h(n)`: heuristic Haversine từ `n` đến đích, đổi sang thời gian bằng tốc độ phương tiện.
+
+Chi phí rẽ được cộng thẳng vào cost của route trong frontend hiện tại; backend vẫn hỗ trợ `turn_cost` cho A*.
+
+### Bidirectional A*
+
+Chế độ `bidirectional` mở rộng đồng thời từ điểm đi và điểm đến.
+
+- Nhánh tiến và nhánh lùi đều dùng cùng hàm cost/heuristic.
+- Backend trả thêm `explored_nodes_backward` để frontend animate hai hướng bằng hai màu khác nhau.
+- Thuật toán dừng khi hai front không còn khả năng tạo đường tốt hơn đường tốt nhất đã tìm thấy.
+
+### D* Lite
+
+Chế độ `dstar_lite` dùng lớp `DStarLite` trong `solver.py`.
+
+- `g` lưu chi phí tốt nhất đã biết.
+- `rhs` lưu giá trị nhất quán một bước trước của node.
+- Frontier được quản lý bằng priority queue với key dựa trên `g`, `rhs`, heuristic và biến `km`.
+
+Trong phiên bản hiện tại, D* Lite được dùng như một lựa chọn tìm đường trên đồ thị đã được áp điều kiện động trước khi chạy. Khi chọn D* Lite, backend ép `top_k = 1`, nên frontend chỉ hiển thị một tuyến.
+
+## Tạo nhiều tuyến thay thế
+
+A* và Bidirectional A* có thể trả về tối đa 3 tuyến.
+
+Cách làm:
+
+- Chạy thuật toán nhiều lần.
+- Sau mỗi route, nhân penalty ngẫu nhiên lên các node trung gian của route vừa chọn.
+- Loại route mới nếu độ khác biệt so với các route đã nhận nhỏ hơn ngưỡng `8%`.
+
+Cách này không phải k-shortest path chuẩn, nhưng đủ để tạo các route thay thế có mức phân tán hợp lý trong bối cảnh đồ thị đường phố thực tế.
+
+## Tắc đường, ngập lụt và vật cản
+
+Hàm `apply_mock_conditions` cập nhật trạng thái các cạnh trước mỗi lần tìm đường:
+
+- `Low`: chỉ tăng nhẹ cost theo hệ số `1.2`.
+- `Normal`: tăng cost theo hệ số `1.5`, áp dụng ngẫu nhiên khoảng 30% cạnh bằng seed cố định.
+- `High`: tăng cost theo hệ số `2.0` cho toàn bộ cạnh.
+
+Ngập lụt được xác định từ `rain_mm` và số làn:
+
+```text
+capacity = lanes * 3 * 15
 ```
 
-#### Bước 4: Tải dữ liệu bản đồ nền (Chỉ chạy một lần đầu tiên)
-Để tạo file đồ thị `map_dong_da.graphml`, hãy chạy script tải dữ liệu từ OpenStreetMap:
-```bash
-cd backend
-python prepare_data.py
-```
-*Lưu ý: Quá trình này yêu cầu máy tính có kết nối Internet để tải dữ liệu địa lý của Quận Đống Đa (~330m vùng đệm). Khi màn hình thông báo `TẢI DỮ LIỆU THÀNH CÔNG!` và file `backend/data/map_dong_da.graphml` được tạo ra, bạn có thể chạy server ngoại tuyến.*
+Nếu `rain_mm > capacity`:
 
-#### Bước 5: Khởi động Flask Server (Backend)
-Vẫn ở trong thư mục `backend`, khởi chạy backend API:
-```bash
-python app.py
-```
-Server sẽ được kích hoạt tại địa chỉ: `http://localhost:5000`.
+- `walk` và `car` không được đi qua cạnh đó.
+- `bike` vẫn đi được nhưng bị nhân thời gian với hệ số lớn.
 
-#### Bước 6: Khởi chạy Giao diện (Frontend)
-*   Mở trực tiếp tệp `frontend/index.html` bằng trình duyệt web.
-*   Hoặc sử dụng extension **Live Server** trên VS Code để khởi động một local server tĩnh cho frontend.
+Người dùng cũng có thể click để đánh dấu điểm tắc hoặc ngập thủ công. Backend map các điểm này về node gần nhất và áp penalty tương ứng.
 
-### Cách 2: Chạy bằng Docker
+## Ô tô trong ngõ
 
-Đảm bảo `backend/data/map_dong_da.graphml` đã tồn tại (chạy `prepare_data.py` trước nếu chưa có), sau đó:
+Khi phương tiện là `car`, backend kiểm tra điểm đi hoặc điểm đến có nằm trong ngõ/hẻm hay không.
 
-```bash
-docker compose up --build
-```
+Nếu có, route sẽ được ghép thành nhiều chặng:
 
-*   **Backend:** `http://localhost:5000`
-*   **Frontend:** `http://localhost:80`
+- Đi bộ từ điểm trong ngõ ra node có thể đi ô tô.
+- Đi ô tô trên phần đường chính.
+- Đi bộ từ node ô tô gần nhất vào điểm đích nếu cần.
 
-Để chạy ngầm (background):
-```bash
-docker compose up --build -d
-```
+Frontend vẽ chặng đi bộ bằng nét đứt và chặng ô tô bằng nét liền. Phần chỉ dẫn lộ trình cũng hiển thị theo từng chặng riêng biệt.
 
-Để dừng tất cả container:
-```bash
-docker compose down
-```
-
----
-
-## 6. API Documentation
+## Backend API
 
 ### `POST /api/find-path`
 
-Tìm đường đi giữa hai điểm trên bản đồ.
-
-**Request body (JSON):**
+Request body cơ bản:
 
 ```json
 {
-  "start": { "lat": 21.012, "lng": 105.824 },
-  "end": { "lat": 21.018, "lng": 105.832 },
+  "start": { "lat": 21.0, "lng": 105.8 },
+  "end": { "lat": 21.01, "lng": 105.82 },
   "vehicle": "bike",
   "top_k": 3,
   "traffic_level": "Normal",
-  "rain_mm": 0,
-  "jammed": [{ "lat": 21.015, "lng": 105.828 }],
-  "flooded": []
-}
-```
-
-| Trường | Kiểu | Mặc định | Mô tả |
-|---|---|---|---|
-| `start` | `{lat, lng}` | *bắt buộc* | Tọa độ điểm xuất phát |
-| `end` | `{lat, lng}` | *bắt buộc* | Tọa độ điểm đến |
-| `vehicle` | `string` | `"bike"` | Phương tiện: `walk` (5 km/h), `bike` (25 km/h), `car` (35 km/h) |
-| `top_k` | `int` | `3` | Số tuyến đường trả về (1-10) |
-| `traffic_level` | `string` | `"Normal"` | Mức độ tắc đường: `Low`, `Normal`, `High` |
-| `rain_mm` | `float` | `0.0` | Lượng mưa (mm), ảnh hưởng đến ngập lụt |
-| `jammed` | `array` | `[]` | Danh sách tọa độ các điểm tắc đường thủ công |
-| `flooded` | `array` | `[]` | Danh sách tọa độ các điểm ngập lụt thủ công |
-
-**Response thành công (200):**
-
-```json
-{
-  "status": "success",
-  "flooded_edges": [[[21.012, 105.824], [21.013, 105.825]]],
-  "data": {
-    "path": [{"lat": 21.012, "lng": 105.824}],
-    "explored_nodes": [[21.012, 105.824]],
-    "distance_m": 1234.5,
-    "duration_min": 3.2,
-    "routes": [
-      {
-        "rank": 1,
-        "path": [{"lat": 21.012, "lng": 105.824}],
-        "explored_nodes": [[21.012, 105.824]],
-        "distance_m": 1234.5,
-        "duration_min": 3.2,
-        "instructions": [
-          {"action": "straight", "street": "Phố Tây Sơn", "distance_m": 120.0},
-          {"action": "left", "street": "Phố Chùa Bộc", "distance_m": 85.3}
-        ]
-      }
-    ]
+  "rain_mm": 100,
+  "algorithm": "astar",
+  "turn_cost": true,
+  "obstacles": {
+    "jammed": [],
+    "flooded": []
   }
 }
 ```
 
-**Response lỗi (400/404/500):**
+Response thành công trả về:
 
-```json
-{
-  "status": "error",
-  "message": "Không tìm thấy tuyến phù hợp với điều kiện hiện tại."
-}
+- `data.path`: tuyến chính.
+- `data.routes`: danh sách route.
+- `data.explored_nodes`: node đã mở rộng.
+- `data.explored_nodes_backward`: node đã mở rộng theo hướng lùi, nếu là Bidirectional A*.
+- `data.flooded_edges`: các cạnh bị ngập để frontend tô màu.
+- `status: success`.
+
+## Công nghệ sử dụng
+
+| Phần | Công nghệ |
+|---|---|
+| Backend | Python, Flask, Flask-CORS, OSMnx, NetworkX |
+| Frontend | HTML, CSS, Vanilla JavaScript, Leaflet |
+| Dữ liệu bản đồ | OpenStreetMap, lưu cục bộ bằng GraphML |
+| Triển khai local | Docker, Docker Compose |
+
+## Cài đặt và chạy thủ công
+
+Yêu cầu:
+
+- Python 3.9+.
+- Trình duyệt hiện đại.
+- Kết nối Internet nếu cần tải lại dữ liệu bản đồ bằng `prepare_data.py`.
+- Nếu máy bạn không có lệnh `python`, hãy dùng `python3` tương đương.
+
+Tạo môi trường Python và cài dependency:
+
+```bash
+python -m venv backend/venv
+source backend/venv/bin/activate
+pip install -r backend/requirements.txt
 ```
 
----
+Trên Windows:
 
-## Hướng dẫn sử dụng trên Bản đồ
+```powershell
+backend\venv\Scripts\activate
+```
 
-1.  **Chọn điểm Đi và Đến:** Click chuột trái lần lượt vào 2 điểm bất kỳ trên khu vực Quận Đống Đa trên bản đồ để đặt điểm đi (ghim màu xanh) và điểm đến (ghim màu đỏ).
-2.  **Định cấu hình các thông số:**
-    *   Chọn phương tiện: *Đi bộ*, *Xe máy*, *Ô tô*.
-    *   Điều chỉnh mức độ tắc đường và kéo thanh trượt lượng mưa (nếu lượng mưa vượt công suất thoát nước của đường, đường sẽ hiển thị màu xanh lam báo ngập).
-    *   Chọn các tuyến thay thế: Tuyến 1, Tuyến 2 hoặc Tuyến 3.
-3.  **Tạo chướng ngại vật thủ công:**
-    *   Chuyển mục "Chọn Điểm Đi/Đến" sang "Đánh dấu Tắc đường" hoặc "Đánh dấu Ngập lụt".
-    *   Click vào bản đồ để tạo các điểm chướng ngại vật tùy ý để xem thuật toán tự động tránh các điểm đó như thế nào.
-4.  **Bật/Tắt Animation:** Để xem cách thuật toán A\* loang rộng (các node đã được duyệt - màu xanh lam nhạt) trước khi tìm thấy tuyến tối ưu.
+Nếu chưa có `backend/data/map_dong_da.graphml`, tải dữ liệu bản đồ:
+
+```bash
+cd backend
+python prepare_data.py
+```
+
+Chạy backend:
+
+```bash
+cd backend
+python app.py
+```
+
+Backend chạy tại `http://localhost:5000`.
+
+Sau đó mở `frontend/index.html` trong trình duyệt hoặc dùng một static server/Live Server cho thư mục `frontend`.
+
+## Chạy bằng Docker
+
+Đảm bảo file `backend/data/map_dong_da.graphml` đã tồn tại, rồi chạy:
+
+```bash
+docker compose up --build --force-recreate
+```
+
+Frontend được mount vào container Nginx trong `docker-compose.yml`, nên khi sửa `frontend/index.html`, `frontend/css/style.css` hoặc `frontend/js/map_logic.js`, refresh trình duyệt sẽ thấy thay đổi ngay. Nếu vẫn thấy giao diện cũ, hard refresh trình duyệt hoặc chạy lại lệnh trên để tạo container mới.
+
+Địa chỉ mặc định:
+
+- Frontend: `http://localhost`
+- Backend: `http://localhost:5000`
+
+Dừng container:
+
+```bash
+docker compose down
+```
+
+## Cách dùng giao diện
+
+1. Click lên bản đồ để chọn điểm đi.
+2. Click lần nữa để chọn điểm đến.
+3. Chọn phương tiện và thuật toán trong sidebar.
+4. Điều chỉnh tắc đường và lớp ngập lụt theo trạng thái hiện tại.
+5. Chọn chế độ click `Đánh dấu Tắc đường` hoặc `Đánh dấu Ngập lụt` nếu muốn thêm vật cản thủ công.
+6. Xem Tuyến 1/2/3 trong hộp chọn tuyến. Với D* Lite chỉ có Tuyến 1.
+7. Mở `Chi tiết lộ trình` để xem chỉ dẫn theo từng đoạn đường.
+
+## Ghi chú triển khai
+
+- `turn_cost` vẫn được backend hỗ trợ cho A* và hiện được frontend giữ bật mặc định.
+- `clickMode` được reset về chế độ chọn điểm khi bấm làm mới bản đồ.
+- `syncControlSummary()` trong frontend đồng bộ các chip trạng thái với giá trị select hiện tại.
+- Chỉ dẫn lộ trình được gom lại để tránh lặp từng bước nhỏ cùng một street.
