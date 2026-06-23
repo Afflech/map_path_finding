@@ -6,6 +6,10 @@ from itertools import count
 
 import networkx as nx
 import osmnx as ox
+import time
+
+from cost_model import MultiCriteriaCostCalculator
+from aco import ACOZoneSolver
 
 ox.settings.log_console = False
 
@@ -206,6 +210,8 @@ def _classify_turn(bearing_in, bearing_out):
     return "left", TURN_COST_SECONDS["left"]
 
 
+DEFAULT_COST_CALC = MultiCriteriaCostCalculator()
+
 def _pick_best_edge_attrs(graph, u, v, speed_ms, vehicle, jammed_nodes, flooded_nodes):
     edges_between = graph.get_edge_data(u, v, default={})
     if not edges_between:
@@ -217,38 +223,32 @@ def _pick_best_edge_attrs(graph, u, v, speed_ms, vehicle, jammed_nodes, flooded_
 
     for attrs in edges_between.values():
         length = _flatten_length(attrs.get("length", 1.0))
-
-        # Dùng traffic_cost nếu đã apply_mock_conditions, ngược lại dùng length
         traffic_cost = attrs.get("_traffic_cost", length)
-        travel_time = traffic_cost / speed_ms
 
-        # Ngập lụt từ apply_mock_conditions
-        if attrs.get("_flooded", False):
-            if vehicle in FLOODED_BLOCKED_VEHICLES:
-                travel_time = float("inf")
-            else:
-                travel_time *= FLOODED_BIKE_PENALTY_FACTOR
+        is_flooded_attr = attrs.get("_flooded", False)
+        is_jammed_node = (u in jammed_nodes or v in jammed_nodes)
+        is_flooded_node = (u in flooded_nodes or v in flooded_nodes)
+        
+        is_flooded = is_flooded_attr or is_flooded_node
+        is_blocked = False
 
-        # Fallback: jammed/flooded nodes từ tham số cũ
-        if u in jammed_nodes or v in jammed_nodes:
-            travel_time *= JAMMED_PENALTY_FACTOR
-        if u in flooded_nodes or v in flooded_nodes:
-            if vehicle in FLOODED_BLOCKED_VEHICLES:
-                travel_time = float("inf")
-            else:
-                travel_time *= FLOODED_BIKE_PENALTY_FACTOR
+        if is_flooded and vehicle in FLOODED_BLOCKED_VEHICLES:
+            is_blocked = True
 
-        # Car chỉ đi đường ô tô
         if vehicle == "car":
             hw = attrs.get("highway", "")
             if isinstance(hw, list):
                 hw = hw[0] if hw else ""
             if str(hw) not in CAR_ALLOWED_HIGHWAY:
-                travel_time = float("inf")
+                is_blocked = True
 
-        if travel_time < best_weight:
+        total_cost, _ = DEFAULT_COST_CALC.evaluate_edge(
+            length, speed_ms, traffic_cost, is_flooded, is_jammed_node, is_blocked
+        )
+
+        if total_cost < best_weight:
             best_attrs = attrs
-            best_weight = travel_time
+            best_weight = total_cost
             best_length = length
 
     return best_attrs, best_weight, best_length
@@ -303,6 +303,80 @@ def _astar_path_with_exploration(graph, source, target, heuristic, weight, turn_
             push(queue, (ncost + h_val, next(c), neighbor, ncost, current, new_bearing))
 
     raise nx.NetworkXNoPath
+
+
+def _hierarchical_astar_with_exploration(graph, source, target, heuristic, weight, turn_cost_enabled=False, zone_manager=None):
+    if not zone_manager:
+        t_s = time.perf_counter()
+        p, e = _astar_path_with_exploration(graph, source, target, heuristic, weight, turn_cost_enabled)
+        t_e = time.perf_counter()
+        return p, e, None, 0, (t_e - t_s) * 1000
+
+    t0 = time.perf_counter()
+    start_zone = zone_manager.node_to_zone.get(source)
+    end_zone = zone_manager.node_to_zone.get(target)
+    
+    if not start_zone or not end_zone:
+        t_s = time.perf_counter()
+        p, e = _astar_path_with_exploration(graph, source, target, heuristic, weight, turn_cost_enabled)
+        t_e = time.perf_counter()
+        return p, e, None, 0, (t_e - t_s) * 1000
+
+    macro_path = zone_manager.get_zone_path(start_zone, end_zone)
+    if not macro_path:
+        t_s = time.perf_counter()
+        p, e = _astar_path_with_exploration(graph, source, target, heuristic, weight, turn_cost_enabled)
+        t_e = time.perf_counter()
+        return p, e, None, 0, (t_e - t_s) * 1000
+    t1 = time.perf_counter()
+
+    allowed_zones = set(macro_path)
+    sub_nodes = {n for n, data in graph.nodes(data=True) if data.get('zone_id') in allowed_zones}
+    
+    expanded_sub_nodes = set(sub_nodes)
+    for n in sub_nodes:
+        for nb in graph.neighbors(n):
+            expanded_sub_nodes.add(nb)
+
+    expanded_sub_nodes.add(source)
+    expanded_sub_nodes.add(target)
+
+    sub_graph = graph.subgraph(expanded_sub_nodes)
+
+    t2 = time.perf_counter()
+    try:
+        path, explored = _astar_path_with_exploration(sub_graph, source, target, heuristic, weight, turn_cost_enabled)
+        t3 = time.perf_counter()
+        return path, explored, macro_path, (t1 - t0) * 1000, (t3 - t2) * 1000
+    except nx.NetworkXNoPath:
+        path, explored = _astar_path_with_exploration(graph, source, target, heuristic, weight, turn_cost_enabled)
+        t3 = time.perf_counter()
+        return path, explored, macro_path, (t1 - t0) * 1000, (t3 - t2) * 1000
+
+def _hierarchical_astar_with_macro_path(graph, source, target, macro_path, heuristic, weight, turn_cost_enabled=False):
+    t0 = time.perf_counter()
+    allowed_zones = set(macro_path)
+    sub_nodes = {n for n, data in graph.nodes(data=True) if data.get('zone_id') in allowed_zones}
+    
+    expanded_sub_nodes = set(sub_nodes)
+    for n in sub_nodes:
+        for nb in graph.neighbors(n):
+            expanded_sub_nodes.add(nb)
+
+    expanded_sub_nodes.add(source)
+    expanded_sub_nodes.add(target)
+
+    sub_graph = graph.subgraph(expanded_sub_nodes)
+
+    t1 = time.perf_counter()
+    try:
+        path, explored = _astar_path_with_exploration(sub_graph, source, target, heuristic, weight, turn_cost_enabled)
+        t2 = time.perf_counter()
+        return path, explored, macro_path, 0, (t2 - t1) * 1000
+    except nx.NetworkXNoPath:
+        path, explored = _astar_path_with_exploration(graph, source, target, heuristic, weight, turn_cost_enabled)
+        t2 = time.perf_counter()
+        return path, explored, macro_path, 0, (t2 - t1) * 1000
 
 
 def _bidirectional_astar_with_exploration(graph, source, target, heuristic, weight_forward, weight_backward):
@@ -441,6 +515,10 @@ def _route_to_payload(
     total_distance = 0.0
     total_time_sec = 0.0
     instructions = []
+    total_travel_time_s = 0.0
+    total_traffic_penalty_s = 0.0
+    total_flood_risk_s = 0.0
+    total_turn_penalty_s = 0.0
     previous_bearing = None
 
     for idx in range(len(route_nodes) - 1):
@@ -452,11 +530,24 @@ def _route_to_payload(
         if edge_attrs is None or not math.isfinite(edge_weight):
             continue
 
+        length = _flatten_length(edge_attrs.get("length", 1.0))
+        traffic_cost = edge_attrs.get("_traffic_cost", length)
+        is_flooded = edge_attrs.get("_flooded", False) or (u in flooded_nodes or v in flooded_nodes)
+        is_jammed = (u in jammed_nodes or v in jammed_nodes)
+        
+        _, breakdown = DEFAULT_COST_CALC.evaluate_edge(
+            length, speed_ms, traffic_cost, is_flooded, is_jammed, False
+        )
+
         node_factor = max(node_penalties.get(u, 1.0), node_penalties.get(v, 1.0))
         edge_weight *= node_factor
 
         total_distance += edge_length
         total_time_sec += edge_weight
+        
+        total_travel_time_s += breakdown.get("travel_time_s", 0.0) * node_factor
+        total_traffic_penalty_s += breakdown.get("traffic_penalty_s", 0.0) * node_factor
+        total_flood_risk_s += breakdown.get("flood_risk_s", 0.0) * node_factor
 
         current_bearing = edge_attrs.get("bearing")
         if current_bearing is None:
@@ -472,6 +563,7 @@ def _route_to_payload(
                 turn_action = "straight"
             if turn_cost_enabled:
                 total_time_sec += turn_penalty_s
+                total_turn_penalty_s += turn_penalty_s
 
         street_name = edge_attrs.get("name", "Đường không tên")
         if isinstance(street_name, list):
@@ -512,6 +604,13 @@ def _route_to_payload(
         "duration_min": total_time_sec / 60.0,
         "node_count": len(route_nodes),
         "instructions": _merge_instructions(instructions),
+        "cost_breakdown": {
+            "travel_time_s": round(total_travel_time_s, 2),
+            "traffic_penalty_s": round(total_traffic_penalty_s, 2),
+            "flood_risk_s": round(total_flood_risk_s, 2),
+            "turn_penalty_s": round(total_turn_penalty_s, 2),
+            "total_cost": round(total_time_sec, 2)
+        }
     }
     if explored_backward is not None:
         result["explored_nodes_backward"] = [
@@ -701,6 +800,7 @@ def find_shortest_path(
     rain_mm=0.0,
     algorithm="astar",
     turn_cost=False,
+    zone_manager=None,
 ):
     try:
         start_lat, start_lon = _parse_point(start_coords)
@@ -768,10 +868,41 @@ def find_shortest_path(
         if algorithm == "dstar_lite":
             top_k = 1
 
-        for _ in range(max_attempts):
+        aco_macro_paths = []
+        aco_time_ms = 0
+        if algorithm == "aco" and zone_manager:
+            start_zone = zone_manager.node_to_zone.get(algo_start)
+            end_zone = zone_manager.node_to_zone.get(algo_end)
+            if start_zone and end_zone:
+                t0_aco = time.perf_counter()
+                aco_solver = ACOZoneSolver(zone_manager, start_zone, end_zone, num_ants=10, iterations=5)
+                aco_macro_paths = aco_solver.run(top_k=max_attempts)
+                t1_aco = time.perf_counter()
+                aco_time_ms = (t1_aco - t0_aco) * 1000
+            else:
+                algorithm = "hierarchical" # fallback if zones missing
+
+        for attempt_idx in range(max_attempts):
             explored_backward = None
+            macro_path = None
             try:
-                if algorithm == "dstar_lite":
+                if algorithm == "aco":
+                    if not aco_macro_paths:
+                        break
+                    macro_path = aco_macro_paths.pop(0)
+                    t_m_s = time.perf_counter()
+                    route_nodes, explored_nodes, macro_path, zone_t, local_t = _hierarchical_astar_with_macro_path(
+                        graph,
+                        algo_start,
+                        algo_end,
+                        macro_path,
+                        heuristic=lambda u, v: _heuristic_time(u, v, graph, speed_ms),
+                        weight=weight_func,
+                        turn_cost_enabled=turn_cost,
+                    )
+                    zone_time_ms = zone_t + aco_time_ms # we'll track aco_time outside
+                    local_time_ms = local_t
+                elif algorithm == "dstar_lite":
                     route_nodes, explored_nodes = _dstar_lite_find_path(
                         graph, algo_start, algo_end, speed_ms, vehicle,
                         jammed_nodes, flooded_nodes, node_penalties,
@@ -786,6 +917,16 @@ def find_shortest_path(
                             weight_forward=weight_func,
                             weight_backward=weight_func,
                         )
+                    )
+                elif algorithm == "hierarchical":
+                    route_nodes, explored_nodes, macro_path, zone_time_ms, local_time_ms = _hierarchical_astar_with_exploration(
+                        graph,
+                        algo_start,
+                        algo_end,
+                        heuristic=lambda u, v: _heuristic_time(u, v, graph, speed_ms),
+                        weight=weight_func,
+                        turn_cost_enabled=turn_cost,
+                        zone_manager=zone_manager,
                     )
                 else:
                     route_nodes, explored_nodes = _astar_path_with_exploration(
@@ -831,13 +972,34 @@ def find_shortest_path(
                 )
                 route_payload["segments"] = segments
                 route_payload["multimodal"] = True
+                if macro_path:
+                    route_payload["zones_traversed"] = macro_path
+                    if zone_manager:
+                        route_payload["zones_bounds"] = [zone_manager.get_zone_bounds(z) for z in macro_path]
+                    route_payload["zone_time_ms"] = round(zone_time_ms, 2)
+                    route_payload["local_time_ms"] = round(local_time_ms, 2)
             else:
-                route_payload = _route_to_payload(
-                    graph, route_nodes, explored_nodes, speed_ms, vehicle,
-                    jammed_nodes, flooded_nodes, node_penalties,
+                payload = _route_to_payload(
+                    graph,
+                    route_nodes,
+                    explored_nodes,
+                    speed_ms,
+                    vehicle,
+                    jammed_nodes,
+                    flooded_nodes,
+                    node_penalties,
                     explored_backward=explored_backward,
                     turn_cost_enabled=turn_cost,
                 )
+            
+                if macro_path:
+                    payload["zones_traversed"] = macro_path
+                    if zone_manager:
+                        payload["zones_bounds"] = [zone_manager.get_zone_bounds(z) for z in macro_path]
+                    payload["zone_time_ms"] = round(zone_time_ms, 2)
+                    payload["local_time_ms"] = round(local_time_ms, 2)
+                    
+                route_payload = payload
 
             route_payload["rank"] = len(route_payloads) + 1
             route_payloads.append(route_payload)

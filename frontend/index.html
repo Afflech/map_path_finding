@@ -99,6 +99,8 @@
                     <option value="astar" selected>A* (Cơ bản)</option>
                     <option value="bidirectional">A* Hai chiều</option>
                     <option value="dstar_lite">D* Lite</option>
+                    <option value="hierarchical">Hierarchical A*</option>
+                    <option value="aco">ACO trên Zone Graph</option>
                 </select>
             </div>
 
@@ -176,6 +178,14 @@
 
         <div class="result-summary" id="result-summary">Chọn điểm đi và điểm đến trên bản đồ.</div>
 
+        <div class="cost-breakdown" id="cost-breakdown" style="display: none;">
+            <div class="cb-item"><span class="cb-label">Travel Time:</span><span class="cb-val" id="cb-time">0s</span></div>
+            <div class="cb-item"><span class="cb-label">Traffic:</span><span class="cb-val" id="cb-traffic" style="color:var(--warning)">+0s</span></div>
+            <div class="cb-item"><span class="cb-label">Flood:</span><span class="cb-val" id="cb-flood" style="color:var(--error)">+0s</span></div>
+            <div class="cb-item"><span class="cb-label">Turn:</span><span class="cb-val" id="cb-turn" style="color:var(--accent)">+0s</span></div>
+            <div class="cb-item cb-total"><span class="cb-label">Total Cost:</span><span class="cb-val" id="cb-total">0s</span></div>
+        </div>
+
         <div class="result-algo">
             <div class="algo-badge">
                 <span class="algo-icon">D*</span>
@@ -186,6 +196,31 @@
             </div>
             <div class="algo-time">
                 <span class="algo-time-value" id="compute-time-info">— ms</span>
+            </div>
+        </div>
+
+        <div class="result-comparison" id="result-comparison-container" style="display: none;">
+            <div class="comparison-header-wrapper" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div class="comparison-title" style="margin-bottom: 0; font-size: 15px; font-weight: 700;">Đánh giá hiệu năng</div>
+                <label class="switch" style="transform: scale(0.85); margin: 0;">
+                    <input type="checkbox" id="comparison-toggle" checked>
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div id="comparison-content">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Thuật toán</th>
+                            <th>Node</th>
+                            <th>Time (ms)</th>
+                            <th>Distance (m)</th>
+                            <th>Memory (KB)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="comparison-tbody">
+                    </tbody>
+                </table>
             </div>
         </div>
 

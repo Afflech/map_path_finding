@@ -78,6 +78,7 @@ const ANIMATION_SPEED_PRESETS = {
     slow: { intervalMs: 24, batchSize: 2 },
 };
 let currentRoutes = [];
+let zoneRectangles = [];
 let exploredNodeMarkers = [];
 let exploredAnimationTimer = null;
 let animationEnabled = true;
@@ -97,6 +98,16 @@ const algoInfoText = document.getElementById("algo-info");
 const algoBadgeIcon = document.querySelector(".algo-icon");
 const resultSummary = document.getElementById("result-summary");
 const resultRouteTitle = document.getElementById("result-route-title");
+const comparisonDiv = document.getElementById("result-comparison-container");
+const comparisonContent = document.getElementById("comparison-content");
+const comparisonToggle = document.getElementById("comparison-toggle");
+const comparisonTbody = document.getElementById("comparison-tbody");
+const costBreakdownDiv = document.getElementById("cost-breakdown");
+const cbTime = document.getElementById("cb-time");
+const cbTraffic = document.getElementById("cb-traffic");
+const cbFlood = document.getElementById("cb-flood");
+const cbTurn = document.getElementById("cb-turn");
+const cbTotal = document.getElementById("cb-total");
 const vehicleTypeSelect = document.getElementById("vehicleType");
 
 const MIXED_MODE_TEMPLATE = {
@@ -181,6 +192,8 @@ function clearRouteLayers() {
     floodedEdgePolylines = [];
     transferMarkers.forEach((marker) => map.removeLayer(marker));
     transferMarkers = [];
+    zoneRectangles.forEach((rect) => map.removeLayer(rect));
+    zoneRectangles = [];
     _clearArrows();
 }
 
@@ -428,12 +441,58 @@ function onRouteSelectionChange() {
     if (!currentRoutes.length) return;
     const selectedIndex = Number(routeSelector.value);
     const selectedRoute = currentRoutes[selectedIndex] || currentRoutes[0];
+    
+    // Xóa zone cũ
+    zoneRectangles.forEach((rect) => map.removeLayer(rect));
+    zoneRectangles = [];
+    
+    // Vẽ zones traversed nếu có
+    if (selectedRoute.zones_bounds) {
+        selectedRoute.zones_bounds.forEach(bounds => {
+            const rect = L.rectangle(bounds, {
+                color: "#ff7800",
+                weight: 2,
+                fillOpacity: 0.1
+            }).addTo(map);
+            zoneRectangles.push(rect);
+        });
+    }
+    
+    
     renderRouteWithAnimation(selectedRoute, false);
     distanceText.innerText = `${(selectedRoute.distance_m / 1000).toFixed(2)} km`;
     timeText.innerText = `${selectedRoute.duration_min.toFixed(1)} phút`;
+    
+    if (algoInfoText && currentRoutes.length > 0) {
+        let extraText = "";
+        if (selectedRoute.zone_time_ms != null) {
+            extraText = ` | Zone Time: ${selectedRoute.zone_time_ms}ms | Local Time: ${selectedRoute.local_time_ms}ms`;
+        }
+        // Retain the base text by replacing the dynamic part
+        const baseText = algoInfoText.innerText.split(' | ')[0].split(' (')[0];
+        algoInfoText.innerText = `${baseText}${extraText} (${currentRoutes.length} tuyến)`;
+    }
+
     if (selectedRoute.multimodal && selectedRoute.segments) {
         renderMultimodalSegments(selectedRoute.segments);
     } else {
+        // Render breakdown
+        if (selectedRoute.cost_breakdown && costBreakdownDiv) {
+            costBreakdownDiv.style.display = 'flex';
+            cbTime.innerText = `${selectedRoute.cost_breakdown.travel_time_s}s`;
+            cbTraffic.innerText = `+${selectedRoute.cost_breakdown.traffic_penalty_s}s`;
+            cbFlood.innerText = `+${selectedRoute.cost_breakdown.flood_risk_s}s`;
+            cbTurn.innerText = `+${selectedRoute.cost_breakdown.turn_penalty_s}s`;
+            
+            let extraInfo = '';
+            if (selectedRoute.zones_traversed) {
+                extraInfo = ` (${selectedRoute.zones_traversed.length} Zones)`;
+            }
+            cbTotal.innerText = `${selectedRoute.cost_breakdown.total_cost}s${extraInfo}`;
+        } else if (costBreakdownDiv) {
+            costBreakdownDiv.style.display = 'none';
+        }
+
         renderNavigationSteps(selectedRoute.instructions || []);
     }
     updateStatus(`Đang hiển thị tuyến ${selectedIndex + 1}.`, "success");
@@ -468,6 +527,18 @@ function updateAnimationSpeed() {
         return;
     }
     animationSpeed = selected;
+}
+
+animationSpeedSelect?.addEventListener("change", (e) => {
+    animationSpeed = e.target.value;
+});
+
+if (comparisonToggle) {
+    comparisonToggle.addEventListener("change", (e) => {
+        if (comparisonContent) {
+            comparisonContent.style.display = e.target.checked ? "block" : "none";
+        }
+    });
 }
 
 function onAlgorithmChange() {
@@ -626,21 +697,52 @@ async function findShortestPath() {
         syncRouteSelectorOptions(currentRoutes.length);
         onRouteSelectionChange();
 
-        const algoNames = { astar: "A*", bidirectional: "Bi-A*", dstar_lite: "D* Lite" };
-        const algoBadges = { astar: "A*", bidirectional: "Bi", dstar_lite: "D*" };
+        const algoNames = { astar: "A*", bidirectional: "Bi-A*", dstar_lite: "D* Lite", hierarchical: "Hierarchical A*", aco: "ACO" };
+        const algoBadges = { astar: "A*", bidirectional: "Bi", dstar_lite: "D*", hierarchical: "H-A*", aco: "ACO" };
         const algoKey = document.getElementById("algorithmType").value;
         const algoLabel = algoNames[algoKey] || "A*";
 
         if (algoBadgeIcon) algoBadgeIcon.innerText = algoBadges[algoKey] || "A*";
         if (algoInfoText) {
             const timeStr = compTime != null ? `${compTime} ms` : "—";
-            algoInfoText.innerText = `${algoLabel} — Time to success: ${timeStr} (${currentRoutes.length} tuyến)`;
+            let extraText = "";
+            const selectedRoute = currentRoutes[document.getElementById("routeSelector")?.value || 0];
+            if (selectedRoute && selectedRoute.zone_time_ms != null) {
+                extraText = ` | Zone Time: ${selectedRoute.zone_time_ms}ms | Local Time: ${selectedRoute.local_time_ms}ms`;
+            }
+            algoInfoText.innerText = `${algoLabel} — Total computation: ${timeStr}${extraText} (${currentRoutes.length} tuyến)`;
         }
         if (resultRouteTitle) resultRouteTitle.innerText = `Optimized Route (${algoLabel})`;
         const trafficLabel = document.getElementById("trafficLevel")?.value || "Normal";
         const rainVal = document.getElementById("rainMm")?.value || "0";
         if (resultSummary) {
             resultSummary.innerText = `Traffic: ${trafficLabel} · Rain: ${rainVal}mm · ${currentRoutes.length} tuyến tìm thấy.`;
+        }
+
+        // Cập nhật bảng so sánh thuật toán
+        if (data.comparison && comparisonDiv && comparisonTbody) {
+            const keys = ['astar', 'bidirectional', 'dstar_lite', 'hierarchical', 'aco'];
+            let html = '';
+            for (const key of keys) {
+                if (data.comparison[key]) {
+                    const rowData = data.comparison[key];
+                    const name = algoNames[key] || key;
+                    const isBold = key === algoKey ? 'font-weight: 700; color: var(--navy);' : '';
+                    html += `
+                        <tr style="${isBold}">
+                            <td>${name}</td>
+                            <td>${rowData.nodes}</td>
+                            <td>${rowData.time_ms}</td>
+                            <td>${rowData.distance}</td>
+                            <td>${rowData.memory_kb}</td>
+                        </tr>
+                    `;
+                }
+            }
+            comparisonTbody.innerHTML = html;
+            comparisonDiv.style.display = 'block';
+        } else if (comparisonDiv) {
+            comparisonDiv.style.display = 'none';
         }
 
         updateStatus(`${algoLabel}: Tìm thành công (${currentRoutes.length} tuyến).`, "success");
@@ -730,6 +832,9 @@ function resetMap() {
     if (algoBadgeIcon) algoBadgeIcon.innerText = "D*";
     if (resultRouteTitle) resultRouteTitle.innerText = "Optimized Route";
     if (resultSummary) resultSummary.innerText = "Chọn điểm đi và điểm đến trên bản đồ.";
+    if (costBreakdownDiv) costBreakdownDiv.style.display = 'none';
+    if (comparisonDiv) comparisonDiv.style.display = 'none';
+    if (comparisonTbody) comparisonTbody.innerHTML = '';
     renderNavigationSteps([]);
     updateStatus("Đang chờ...", "idle");
 }

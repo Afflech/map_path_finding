@@ -244,7 +244,7 @@ html, body { height: 100%; width: 100%; overflow: hidden; font-family: "Inter", 
 #result-card {
     position: fixed;
     bottom: 24px; left: 50%; transform: translateX(-50%);
-    width: min(480px, calc(100vw - 32px));
+    width: min(600px, calc(100vw - 32px));
     z-index: 1000;
     background: var(--bg-card);
     border-radius: var(--radius);
@@ -283,9 +283,22 @@ html, body { height: 100%; width: 100%; overflow: hidden; font-family: "Inter", 
 
 /* Summary text */
 .result-summary {
-    padding: 0 18px 12px;
+    padding: 0 18px 8px;
     font-size: 12px; color: var(--text-sec); line-height: 1.5;
 }
+
+/* Cost Breakdown */
+.cost-breakdown {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    padding: 8px 18px 12px;
+    font-size: 11px;
+    border-bottom: 1px solid var(--border);
+}
+.cb-item { display: flex; align-items: baseline; gap: 4px; }
+.cb-label { color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; }
+.cb-val { color: var(--text); font-weight: 700; font-family: monospace; font-size: 12px; }
+.cb-total .cb-label { color: var(--navy); }
+.cb-total .cb-val { color: var(--navy); font-size: 13px; font-weight: 800; }
 
 /* Algorithm detail */
 .result-algo {
@@ -317,6 +330,34 @@ html, body { height: 100%; width: 100%; overflow: hidden; font-family: "Inter", 
 .algo-time-value {
     font-size: 12px; font-weight: 700; color: #fff; white-space: nowrap;
 }
+
+/* Comparison Table */
+.result-comparison {
+    padding: 10px 18px;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border);
+}
+.comparison-title {
+    font-size: 12px; font-weight: 700; color: var(--navy);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 8px; text-align: center;
+}
+.comparison-table {
+    width: 100%; border-collapse: collapse; font-size: 12px; text-align: right;
+}
+.comparison-table th {
+    padding: 6px; border-bottom: 2px solid var(--border);
+    color: var(--text-sec); font-weight: 600;
+}
+.comparison-table td {
+    padding: 6px; border-bottom: 1px solid var(--border);
+    color: var(--text); font-weight: 500;
+}
+.comparison-table th:first-child, .comparison-table td:first-child {
+    text-align: left; font-weight: 600;
+}
+.comparison-table tbody tr:last-child td { border-bottom: none; }
+.comparison-table tbody tr:hover { background-color: var(--bg-section); }
 
 /* Status */
 .result-status {
